@@ -50,16 +50,16 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": false,
-      "rootUrl": "http://localhost:8085",
+      "rootUrl": "http://localhost:10085",
       "redirectUris": [
-        "http://localhost:8085/*"
+        "http://localhost:10085/*"
       ],
       "webOrigins": [
-        "http://localhost:8085"
+        "http://localhost:10085"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8085/*"
+        "post.logout.redirect.uris": "http://localhost:10085/*"
       },
       "defaultClientScopes": [
         "profile",

@@ -8,23 +8,23 @@ JWT.
 
 Технические термины разобраны в [глоссарии](#глоссарий) в конце файла.
 
-## Как устроен вход: порты 8090 и 8084
+## Как устроен вход: порты 10009 и 10010
 
 Стенд использует **два адреса Keycloak**, и это объясняет, почему при заходе
 на один из них браузер может увести аутентификацию на другой.
 
 | Адрес | Что это | Что здесь живёт |
 |---|---|---|
-| `http://localhost:8090` | nginx — единая точка входа | канонический публичный адрес Keycloak (`KC_HOSTNAME`): issuer, discovery, формы входа, токены, Admin REST API, документация `/docs/` |
-| `http://localhost:8084` | Keycloak напрямую, без прокси | страницы консоли администратора и Admin REST API (`KC_HOSTNAME_ADMIN`) |
+| `http://localhost:10010` | nginx — единая точка входа | канонический публичный адрес Keycloak (`KC_HOSTNAME`): issuer, discovery, формы входа, токены, Admin REST API, документация `/docs/` |
+| `http://localhost:10009` | Keycloak напрямую, без прокси | страницы консоли администратора и Admin REST API (`KC_HOSTNAME_ADMIN`) |
 
-**Почему 8084 переводит вход на 8090.** Консоль администратора — это не
+**Почему 10009 переводит вход на 10010.** Консоль администратора — это не
 отдельный «логин на месте», а OAuth-клиент master realm. Неаутентифицированного
 пользователя она перенаправляет на authorization-эндпоинт своего realm, а его
-адрес Keycloak строит из `KC_HOSTNAME`, то есть из `http://localhost:8090`.
-Дальше всё как в обычном OIDC: форма входа открывается на 8090 (nginx
+адрес Keycloak строит из `KC_HOSTNAME`, то есть из `http://localhost:10010`.
+Дальше всё как в обычном OIDC: форма входа открывается на 10010 (nginx
 проксирует её в тот же Keycloak), после успешного входа браузер возвращается с
-кодом обратно на консоль 8084. Это штатная схема с одним адресом входа для всех
+кодом обратно на консоль 10009. Это штатная схема с одним адресом входа для всех
 клиентов, а не ошибка и не «перехват 401»: оба порта ведут в один и тот же
 Keycloak, просто роли у них разные.
 
@@ -32,18 +32,18 @@ Keycloak, просто роли у них разные.
 
 | Куда заходить | Кем | Пароль |
 |---|---|---|
-| `http://localhost:8084/admin/` — консоль Keycloak (master realm); форму входа перекинет на 8090 | только bootstrap-администратор `admin` | из `.env`, по умолчанию `dev-admin-change-me` |
-| `http://localhost:8090/realms/reon/account/` — консоль аккаунта realm `reon` | пользователи realm `reon`: `dev-admin`, `dev-finance`, `dev-branch`, все `syn-*` | `<username>-pass` |
+| `http://localhost:10009/admin/` — консоль Keycloak (master realm); форму входа перекинет на 10010 | только bootstrap-администратор `admin` | из `.env`, по умолчанию `dev-admin-change-me` |
+| `http://localhost:10010/realms/reon/account/` — консоль аккаунта realm `reon` | пользователи realm `reon`: `dev-admin`, `dev-finance`, `dev-branch`, все `syn-*` | `<username>-pass` |
 | `/docs/` → «Try it» для Admin REST API | токен `admin-cli` (пример `admin-password` в спецификации) | `admin` / `dev-admin-change-me` |
 | Поток `reon-admin-web` / `reon-admin-panel` (Angular) | пользователи realm `reon` | `<username>-pass` |
 
-Важно: `syn-admin` и другие `dev-*`/`syn-*` в консоль Keycloak (8084) **не
+Важно: `syn-admin` и другие `dev-*`/`syn-*` в консоль Keycloak (10009) **не
 входят никогда** — они существуют только в realm `reon`. Роль `MASTER_ADMIN` у
 `syn-admin` — прикладная (сквозной доступ к данным организаций в модулях), а не
 права администратора Keycloak: ролей `realm-management` в master realm у него
 нет и не должно быть.
 
-Точка входа `http://localhost:8090/` — страница-указатель со ссылками на все
+Точка входа `http://localhost:10010/` — страница-указатель со ссылками на все
 рабочие адреса стенда и объяснением, что проксирует nginx.
 
 ## Текущее состояние
@@ -63,7 +63,7 @@ Keycloak, просто роли у них разные.
 Требования:
 
 - Docker Engine и Docker Compose;
-- свободные порты 8090, 8084 и 5434.
+- свободные порты 10008, 10009, 10010 и 10011.
 
 Никаких внешних репозиториев, приватных реестров или собранных локально образов
 не требуется: всё, что монтируется в контейнеры, лежит в этом репозитории.
@@ -83,42 +83,42 @@ smoke может упасть на ещё не созданных клиента
 
 | Сервис | Адрес | Назначение |
 |---|---|---|
-| nginx (точка входа) | `http://localhost:8090` | страница-указатель, issuer, discovery, токены, форма входа, Admin REST API; лимиты заголовков ≥ 32 КБ |
-| Keycloak напрямую | `http://localhost:8084` | консоль администратора и прямой доступ к API при отладке |
-| Postgres Keycloak | `localhost:5434` | внутренняя БД IdP |
-| Scalar (документация API) | `http://localhost:8090/docs/` | интерактивная OpenAPI-документация API Keycloak; прямой порт `localhost:8091` — только отладка контейнера |
+| nginx (точка входа) | `http://localhost:10010` | страница-указатель, issuer, discovery, токены, форма входа, Admin REST API; лимиты заголовков ≥ 32 КБ |
+| Keycloak напрямую | `http://localhost:10009` | консоль администратора и прямой доступ к API при отладке |
+| Postgres Keycloak | `localhost:10008` | внутренняя БД IdP |
+| Scalar (документация API) | `http://localhost:10010/docs/` | интерактивная OpenAPI-документация API Keycloak; прямой порт `localhost:10011` — только отладка контейнера |
 
-Корень `http://localhost:8090/` — страница-указатель (`text/html; charset=utf-8`)
+Корень `http://localhost:10010/` — страница-указатель (`text/html; charset=utf-8`)
 со ссылками на рабочие адреса стенда:
 
 | Что | Адрес |
 |---|---|
-| Issuer | `http://localhost:8090/realms/reon` |
-| Discovery | `http://localhost:8090/realms/reon/.well-known/openid-configuration` |
-| Форма входа (консоль аккаунта) | `http://localhost:8090/realms/reon/account/` |
-| Admin REST API | `http://localhost:8090/admin/realms/reon` |
-| Документация API (Scalar) | `http://localhost:8090/docs/` |
-| Health-эндпоинт стенда | `http://localhost:8090/healthz` (200, тело `ok`) |
+| Issuer | `http://localhost:10010/realms/reon` |
+| Discovery | `http://localhost:10010/realms/reon/.well-known/openid-configuration` |
+| Форма входа (консоль аккаунта) | `http://localhost:10010/realms/reon/account/` |
+| Admin REST API | `http://localhost:10010/admin/realms/reon` |
+| Документация API (Scalar) | `http://localhost:10010/docs/` |
+| Health-эндпоинт стенда | `http://localhost:10010/healthz` (200, тело `ok`) |
 
-Неизвестные пути на 8090 отвечают 404 с `Content-Type: text/plain` и текстовой
+Неизвестные пути на 10010 отвечают 404 с `Content-Type: text/plain` и текстовой
 подсказкой: браузер показывает её как страницу, а не скачивает файл.
 
 Консоль администратора открывается на прямом порту
-`http://localhost:8084/admin/`: публичный адрес issuer задан через
+`http://localhost:10009/admin/`: публичный адрес issuer задан через
 `KC_HOSTNAME`, а админка — через `KC_HOSTNAME_ADMIN`. Через прокси короткий
 адрес `/admin/` отвечает 404, а рабочий путь самой консоли
 `/admin/master/console/` отдаётся (200) — но штатный адрес консоли всё равно
-8084, потому что её страницы и ассеты рассчитаны на `KC_HOSTNAME_ADMIN`
+10009, потому что её страницы и ассеты рассчитаны на `KC_HOSTNAME_ADMIN`
 (подробнее — в начале файла). Admin REST API при этом
 доступен и через прокси: им пользуются smoke-проверки и воркер синхронизации.
 
-Issuer: `http://localhost:8090/realms/reon`. Конфигурация realm и dev-данные
+Issuer: `http://localhost:10010/realms/reon`. Конфигурация realm и dev-данные
 применяются one-shot сервисом `reon-auth-keycloak-init` (keycloak-config-cli)
 идемпотентно; источник истины — `docker/keycloak/realm.yml` и
 `docker/keycloak/dev-users.yml`.
 
-Занятые порты стенда аутентификации: 8090, 8084, 5434. Порты 8080-8082 и 5433
-заняты смежным стендом `reon-s3-*` — не использовать.
+Занятые порты стенда аутентификации: 10008, 10009, 10010, 10011. Порты
+10000-10007 заняты смежным стендом `reon-s3-*` — не использовать.
 
 ## Клиенты и потоки
 
@@ -148,6 +148,15 @@ Dev-пользователи (пароли — в `docker/keycloak/dev-users.yml
 | `reon-s3-server` | confidential | client_credentials | `dev-reon-s3-server-secret-change-me` |
 | `reon-process-backend` | confidential | client_credentials | `dev-reon-process-backend-secret-change-me` |
 
+В DEV `reon-process-ui` (UI Camunda) слушает `http://localhost:10085` — этот
+адрес прописан в его redirect URI и post-logout URI; `reon-admin-panel` —
+`http://localhost:4200` и `http://localhost:4300`, `reon-admin-web` —
+`http://localhost:4200` и `http://localhost:4201`.
+
+Если стенд уже поднимался, partial import с `ifResourceExists: SKIP` не обновит
+существующего клиента. После смены redirect URI обновите клиента через Admin API
+или пересоздайте том Postgres (последнее удаляет данные DEV-стенда).
+
 Пользователи (пароль — `<username>-pass`):
 
 | Пользователь | Группа | Что проверяет |
@@ -168,7 +177,7 @@ Dev-пользователи (пароли — в `docker/keycloak/dev-users.yml
 Проверить данные вручную:
 
 ```bash
-curl -s -X POST http://localhost:8090/realms/reon/protocol/openid-connect/token \
+curl -s -X POST http://localhost:10010/realms/reon/protocol/openid-connect/token \
   -d grant_type=password \
   -d client_id=reon-dev-smoke \
   -d client_secret=dev-reon-dev-smoke-secret-change-me \
@@ -212,7 +221,7 @@ flowchart LR
   end
 
   subgraph entry["Вход"]
-    NGX["nginx :8090<br/>обратный прокси"]
+    NGX["nginx :10010<br/>обратный прокси"]
     KC["Keycloak<br/>realm reon"]
   end
 
@@ -271,12 +280,12 @@ docs/plan/                  эпики, дорожные карты, описа�
 Интерактивная документация двух групп API Keycloak — OIDC-эндпоинтов realm
 `reon` (discovery, токены, userinfo, JWKS, logout) и используемого стендом
 подмножества Admin REST API (realm, users, groups, clients, roles) — доступна
-по адресу `http://localhost:8090/docs/`. Источник истины —
+по адресу `http://localhost:10010/docs/`. Источник истины —
 `docs/api/openapi.yaml`; контейнер `reon-auth-scalar` (образ
 `scalarapi/api-reference`, том `./docs/api` только для чтения) монтирует
 спецификацию и публикуется через nginx на том же origin, что и API, поэтому
 кнопка «Try it» выполняет живые запросы к Keycloak без CORS. Прямой порт
-`localhost:8091` предназначен только для отладки самого контейнера
+`localhost:10011` предназначен только для отладки самого контейнера
 (`GET /health`).
 
 Группы (теги) в документации плоские, каждая содержит только эндпоинты:
@@ -295,9 +304,9 @@ docs/plan/                  эпики, дорожные карты, описа�
 - `org_id` в DEV выдаётся из атрибута пользователя (зеркало атрибута группы):
   рассинхрон дубля возможен при ручных перемещениях пользователей; задача 04
   делает группу источником истины.
-- Консоль администратора Keycloak штатно живёт на прямом порту 8084
+- Консоль администратора Keycloak штатно живёт на прямом порту 10009
   (`KC_HOSTNAME_ADMIN`); через прокси короткий `/admin/` отвечает 404, хотя
-  путь `/admin/master/console/` отдаётся. Штатный адрес консоли — 8084.
+  путь `/admin/master/console/` отдаётся. Штатный адрес консоли — 10009.
   Admin REST API через прокси доступен: он нужен smoke-проверкам и
   воркеру синхронизации.
 - ROPC включён только у `reon-dev-smoke`; в продуктовых интеграциях запрещён.

@@ -46,9 +46,9 @@ info:
     name: "Внутренний проект"
 
 servers:
-  - url: http://localhost:8090
+  - url: http://localhost:10010
     description: "Точка входа nginx — основной адрес (issuer, API, документация)."
-  - url: http://localhost:8084
+  - url: http://localhost:10009
     description: "Keycloak напрямую — только для отладки; issuer в токенах всё равно указывает на nginx."
 
 tags:
@@ -96,8 +96,8 @@ paths:
         scopes. Клиенты обязаны брать адреса эндпоинтов отсюда, а не
         хардкодить их.
 
-        `issuer` в ответе — `http://localhost:8090/realms/reon` (публичный
-        адрес nginx), даже если запрос пришёл на прямой порт 8084.
+        `issuer` в ответе — `http://localhost:10010/realms/reon` (публичный
+        адрес nginx), даже если запрос пришёл на прямой порт 10009.
       responses:
         "200":
           description: "Документ метаданных OIDC."
@@ -106,12 +106,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/OIDCConfiguration"
               example:
-                issuer: "http://localhost:8090/realms/reon"
-                authorization_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/auth"
-                token_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/token"
-                userinfo_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/userinfo"
-                end_session_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/logout"
-                jwks_uri: "http://localhost:8090/realms/reon/protocol/openid-connect/certs"
+                issuer: "http://localhost:10010/realms/reon"
+                authorization_endpoint: "http://localhost:10010/realms/reon/protocol/openid-connect/auth"
+                token_endpoint: "http://localhost:10010/realms/reon/protocol/openid-connect/token"
+                userinfo_endpoint: "http://localhost:10010/realms/reon/protocol/openid-connect/userinfo"
+                end_session_endpoint: "http://localhost:10010/realms/reon/protocol/openid-connect/logout"
+                jwks_uri: "http://localhost:10010/realms/reon/protocol/openid-connect/certs"
                 grant_types_supported:
                   - authorization_code
                   - client_credentials

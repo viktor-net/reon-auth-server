@@ -16,8 +16,8 @@ Keycloak.
 ## Что входит
 
 1. **Compose-стенд.** Postgres, Keycloak 26.5.5, nginx как точка входа.
-   Порты: nginx 8090, Keycloak 8084, Postgres 5434 (8080-8082 и 5433 заняты
-   смежным стендом `reon-s3-*`).
+   Порты: Postgres 10008, Keycloak 10009, nginx 10010, Scalar 10011 (отладка);
+   `10000-10007` заняты смежным стендом `reon-s3-*`.
 2. **Realm как код.** `docker/keycloak/realm.yml` и `dev-users.yml`
    применяются one-shot сервисом `reon-auth-keycloak-init` через
    `keycloak-config-cli`; повторный запуск идемпотентен.

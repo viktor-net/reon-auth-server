@@ -4,7 +4,7 @@
     Smoke-проверка DEV-стенда аутентификации ИС РЕОН 2.0.
 
 .DESCRIPTION
-    Всё делается через точку входа nginx (по умолчанию http://localhost:8090):
+    Всё делается через точку входа nginx (по умолчанию http://localhost:10010):
       0) стенд поднят, issuer в discovery совпадает с контрактом, страница-указатель
          на / и /healthz отдают корректный Content-Type;
       1) client_credentials для reon-service -> HTTP 200, JWT, aud содержит reon-api;
@@ -49,7 +49,7 @@ if (Test-Path -LiteralPath $envFile) {
     }
 }
 
-$baseUrl = if ($env:REON_AUTH_BASE_URL) { $env:REON_AUTH_BASE_URL } else { 'http://localhost:8090' }
+$baseUrl = if ($env:REON_AUTH_BASE_URL) { $env:REON_AUTH_BASE_URL } else { 'http://localhost:10010' }
 $realm = if ($env:REON_REALM) { $env:REON_REALM } else { 'reon' }
 $serviceClientId = 'reon-service'
 $serviceClientSecret = if ($env:REON_SERVICE_CLIENT_SECRET) { $env:REON_SERVICE_CLIENT_SECRET } else { 'dev-reon-service-secret-change-me' }

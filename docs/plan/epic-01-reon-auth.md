@@ -42,7 +42,7 @@
 [Пользователь]
    │ форма / SSO СУДИР (будущее)
    ▼
-[nginx :8090] ── reverse proxy, лимиты заголовков ≥32k
+[nginx :10010] ── reverse proxy, лимиты заголовков ≥32k
    ▼
 [Keycloak realm=reon] ── IdP: формовый вход, OIDC (code с PKCE, client_credentials),
    │                      орг-дерево группами, capabilities-роли на группах,

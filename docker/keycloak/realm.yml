@@ -2,7 +2,7 @@
 #
 # Применяется сервисом reon-auth-keycloak-init (keycloak-config-cli), идемпотентно.
 # Контракт (не менять без согласования, см. brief local-20261101-01 v2):
-#   realm: reon; issuer через proxy: http://localhost:8090/realms/reon
+#   realm: reon; issuer через proxy: http://localhost:10010/realms/reon
 #   claims: realm_access.roles, groups (полные пути), org_id (строка; см. маппер
 #   org_id — атрибут группы как источник истины + DEV-зеркало у пользователя)
 #   audience: aud содержит reon-api для reon-admin-web и reon-service

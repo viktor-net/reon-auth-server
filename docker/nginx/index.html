@@ -22,7 +22,7 @@ th{background:#f6f8fa}
 <p>Точка входа nginx — прокси к Keycloak; наружу опубликованы IdP и документация.</p>
 
 <h2>Зачем нужен nginx</h2>
-<p>nginx существует только как точка входа: он проксирует к Keycloak три префикса и публикует всё на одном адресе <code>http://localhost:8090</code>.</p>
+<p>nginx существует только как точка входа: он проксирует к Keycloak три префикса и публикует всё на одном адресе <code>http://localhost:10010</code>.</p>
 <table>
 <thead>
 <tr><th>Путь</th><th>Зачем</th><th>Кто отвечает</th></tr>
@@ -36,7 +36,7 @@ th{background:#f6f8fa}
 <tr><td><code>/</code></td><td>эта страница-указатель</td><td>сам nginx</td></tr>
 </tbody>
 </table>
-<p><a href="http://localhost:8084/"><code>http://localhost:8084</code></a> — прямой доступ к Keycloak без прокси (консоль администратора, отладка). Автоматического редиректа между 8084 и 8090 нет: порты независимы, редирект не настраивается.</p>
+<p><a href="http://localhost:10009/"><code>http://localhost:10009</code></a> — прямой доступ к Keycloak без прокси (консоль администратора, отладка). Автоматического редиректа между 10009 и 10010 нет: порты независимы, редирект не настраивается.</p>
 
 <h2>Что nginx не проксирует</h2>
 <p>Всё вне этих префиксов получает <code>404</code> от самого nginx: до Keycloak и Scalar запрос не доходит. Проверено на стенде:</p>
@@ -47,16 +47,16 @@ th{background:#f6f8fa}
 </ul>
 <p>Одиночный <code>/.well-known/</code> не проксируется: discovery есть только у realm — <a href="/realms/reon/.well-known/openid-configuration"><code>/realms/reon/.well-known/openid-configuration</code></a>.</p>
 <p>Management-порт Keycloak <code>9000</code> (health, metrics) не публикуется ни nginx, ни compose: только внутри контейнера.</p>
-<p><code>localhost:5434</code> — Postgres, отдельный сервис стенда, к nginx отношения не имеет.</p>
+<p><code>localhost:10008</code> — Postgres, отдельный сервис стенда, к nginx отношения не имеет.</p>
 <p>Консоль администратора при этом работает: <code>/admin/master/console/</code> — <code>200</code>.</p>
 
 <h2>Адреса стенда</h2>
 <ul>
-<li>Issuer: <a href="http://localhost:8090/realms/reon"><code>http://localhost:8090/realms/reon</code></a> — 200, JSON OpenID-конфигурации realm.</li>
+<li>Issuer: <a href="http://localhost:10010/realms/reon"><code>http://localhost:10010/realms/reon</code></a> — 200, JSON OpenID-конфигурации realm.</li>
 <li>Discovery: <a href="/realms/reon/.well-known/openid-configuration"><code>/realms/reon/.well-known/openid-configuration</code></a> — 200, JSON.</li>
 <li>Форма входа: <a href="/realms/reon/account/"><code>/realms/reon/account/</code></a> — 200, HTML (консоль аккаунта).</li>
 <li>Admin REST API: <a href="/admin/realms/reon"><code>/admin/realms/reon</code></a> — без токена отвечает 401 JSON, это норма: эндпоинт требует Bearer-токен администратора.</li>
-<li>Консоль: <a href="http://localhost:8084/admin/"><code>http://localhost:8084/admin/</code></a> — открывает консоль Keycloak; форма входа уходит на 8090, потому что issuer задан через KC_HOSTNAME. Это штатно.</li>
+<li>Консоль: <a href="http://localhost:10009/admin/"><code>http://localhost:10009/admin/</code></a> — открывает консоль Keycloak; форма входа уходит на 10010, потому что issuer задан через KC_HOSTNAME. Это штатно.</li>
 </ul>
 <p>Администратор консоли Keycloak (master realm) — <code>admin</code> / пароль из <code>.env</code> (по умолчанию <code>dev-admin-change-me</code>); пользователи realm <code>reon</code> (<code>dev-*</code>, <code>syn-*</code>) в консоль Keycloak не входят — они входят на форме <code>reon</code> / в консоли аккаунта.</p>
 </main>

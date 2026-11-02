@@ -17,8 +17,8 @@ UUID `org_id`: орг-узлы одного тенанта (например `/r
 `/reon/hq/finance`) несут один `org_id`, а иерархию внутри тенанта задают
 пути групп; `org_id` — якорь тенанта для фильтрации данных.
 
-DEV-стенд: issuer `http://localhost:8090/realms/reon` (nginx), админка Keycloak
-`http://localhost:8084`. Запуск: `cp .env.example .env && docker compose up -d`;
+DEV-стенд: issuer `http://localhost:10010/realms/reon` (nginx), админка Keycloak
+`http://localhost:10009`. Запуск: `cp .env.example .env && docker compose up -d`;
 проверка контракта: `bash scripts/smoke-auth.sh` или
 `pwsh -File scripts/smoke-auth.ps1` (52 проверки, паритет).
 
@@ -43,13 +43,17 @@ DEV; implicit flow; хранение токенов в localStorage/sessionStora
 
 | Параметр | Значение (DEV) |
 |---|---|
-| authority | `http://localhost:8090/realms/reon` |
+| authority | `http://localhost:10010/realms/reon` |
 | client_id | `reon-admin-web` (public, секрет не используется) |
 | redirect_uri | `http://localhost:4200/` (второй экземпляр — `http://localhost:4201/`) |
 | response_type | `code` |
 | PKCE | обязателен, `S256`; не отключать |
 | scope | `openid profile email` |
 | post_logout_redirect_uri | `http://localhost:4200/*` |
+
+Клиент `reon-admin-panel` использует `http://localhost:4200` и
+`http://localhost:4300`; `reon-process-ui` (UI Camunda) — `http://localhost:10085`
+(redirect URI и post-logout URI).
 
 - Токены хранить только в памяти вкладки; в localStorage/sessionStorage —
   запрещено (раздел 2).
@@ -180,20 +184,20 @@ DEV; implicit flow; хранение токенов в localStorage/sessionStora
 ```bash
 # сервисный токен (client_credentials); aud проставляет audience-mapper,
 # параметр audience не требуется
-curl -s -X POST http://localhost:8090/realms/reon/protocol/openid-connect/token \
+curl -s -X POST http://localhost:10010/realms/reon/protocol/openid-connect/token \
   -d grant_type=client_credentials \
   -d client_id=reon-service \
   -d client_secret=$REON_SERVICE_CLIENT_SECRET
 
 # пользовательский токен (ROPC, DEV-only)
-curl -s -X POST http://localhost:8090/realms/reon/protocol/openid-connect/token \
+curl -s -X POST http://localhost:10010/realms/reon/protocol/openid-connect/token \
   -d grant_type=password \
   -d client_id=reon-dev-smoke \
   -d client_secret=$REON_DEV_SMOKE_CLIENT_SECRET \
   -d username=dev-finance -d password=dev-finance-pass
 
 # discovery
-curl -s http://localhost:8090/realms/reon/.well-known/openid-configuration
+curl -s http://localhost:10010/realms/reon/.well-known/openid-configuration
 ```
 
 Значения секретов и паролей — dev-образцы из `.env.example` и
