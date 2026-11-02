@@ -166,7 +166,7 @@ docker/keycloak/            realm и dev-данные как код (keycloak-co
 docker/nginx/               конфигурация reverse proxy
 scripts/                    smoke-проверки стенда (bash и pwsh)
 docs/adr/                   архитектурные решения
-docs/standards/             стандарты подключения для модулей
+docs/standards/             стандарты подключения сервисов
 docs/plan/                  эпики, дорожные карты, описания задач
 .agents/                    доска задач агентов: brief, results, reduce, journal
 ```
