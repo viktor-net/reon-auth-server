@@ -53,7 +53,11 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-dev-admin-change-me}
       # Внешний адрес IdP фиксирован: все issuer/redirect URL в токенах указывают
       # на точку входа nginx, а не на внутренний порт Keycloak.
+      # Публичный адрес issuer: токены и discovery всегда указывают на прокси.
       KC_HOSTNAME: http://localhost:8090
+      # Админка живёт на прямом порту, чтобы её можно было закрыть в прокси
+      # продуктовым профилем (задача 08), не ломая вход пользователей.
+      KC_HOSTNAME_ADMIN: http://localhost:8084
       KC_HTTP_ENABLED: "true"
       # Доверяем X-Forwarded-* от nginx.
       KC_PROXY_HEADERS: xforwarded
