@@ -26,10 +26,17 @@ JWT.
 Требования: Docker Engine и Docker Compose.
 
 ```bash
-cp .env.example .env
+# .env не обязателен: без него работают dev-значения по умолчанию
 docker compose up -d
+# дождаться, пока применятся realm и синтетические данные
+docker wait reon-auth-keycloak-init reon-auth-synthetic-init
 bash scripts/smoke-auth.sh        # или: pwsh -File scripts/smoke-auth.ps1
 ```
+
+`docker compose up -d` возвращает управление раньше, чем отработают one-shot
+сервисы `reon-auth-keycloak-init` и `reon-auth-synthetic-init`. Без `docker wait`
+smoke может упасть на ещё не созданных клиентах и пользователях. Повторный
+запуск любого из init-сервисов безопасен: оба идемпотентны.
 
 | Сервис | Адрес | Назначение |
 |---|---|---|
@@ -62,6 +69,54 @@ Issuer: `http://localhost:8090/realms/reon`. Конфигурация realm и d
 
 Dev-пользователи (пароли — в `docker/keycloak/dev-users.yml`, только для
 стенда): `dev-admin` (мастер-админ), `dev-finance`, `dev-branch`.
+
+## Синтетические данные
+
+Стенд сам создаёт данные для проверки сценариев модулей: клиенты сервисов и
+12 пользователей. Применяются one-shot сервисом `reon-auth-synthetic-init`
+через partial import, повторный запуск безопасен.
+
+Клиенты сервисов (секреты — dev-заглушки, задаются в `.env`):
+
+| Клиент | Тип | Как получает токен | Секрет по умолчанию |
+|---|---|---|---|
+| `reon-admin-panel` | public | Authorization Code с PKCE | не используется |
+| `reon-process-ui` | public | Authorization Code с PKCE | не используется |
+| `mdm-service` | confidential | client_credentials | `dev-mdm-service-secret-change-me` |
+| `reon-s3-server` | confidential | client_credentials | `dev-reon-s3-server-secret-change-me` |
+| `reon-process-backend` | confidential | client_credentials | `dev-reon-process-backend-secret-change-me` |
+
+Пользователи (пароль — `<username>-pass`):
+
+| Пользователь | Группа | Что проверяет |
+|---|---|---|
+| `syn-mdm-editor` | `/reon/hq` | запись мастер-данных |
+| `syn-mdm-reader` | `/reon/branch-1` | чтение мастер-данных из филиала |
+| `syn-s3-operator` | `/reon/hq` | запись и чтение файлов |
+| `syn-s3-reader` | `/reon/branch-1` | только чтение файлов |
+| `syn-camunda-designer` | `/reon/hq` | запуск процессов |
+| `syn-camunda-viewer` | `/reon/branch-1` | только чтение процессов |
+| `syn-finance-lead` | `/reon/hq/finance` | отчёты и мастер-данные |
+| `syn-finance-analyst` | `/reon/hq/finance` | отчёты без удаления |
+| `syn-branch-employee-1` | `/reon/branch-1` | базовый доступ филиала |
+| `syn-branch-employee-2` | `/reon/branch-1` | базовый доступ филиала |
+| `syn-auditor` | `/reon/hq` | сквозное чтение для проверок |
+| `syn-admin` | `/reon/admins` и `/reon/hq` | `MASTER_ADMIN` |
+
+Проверить данные вручную:
+
+```bash
+curl -s -X POST http://localhost:8090/realms/reon/protocol/openid-connect/token \
+  -d grant_type=password \
+  -d client_id=reon-dev-smoke \
+  -d client_secret=dev-reon-dev-smoke-secret-change-me \
+  -d username=syn-mdm-editor -d password=syn-mdm-editor-pass
+```
+
+Ограничение: partial import применяется со стратегией `SKIP`, поэтому правка
+существующего синтетического пользователя или клиента в JSON не применится к
+живому стенду. Чтобы применить заново, пересоздайте том
+(`docker compose down -v`) или импортируйте ресурс через Admin API.
 
 ## Контракт JWT
 
