@@ -41,8 +41,3 @@ end_of_line = lf
 
 [*.py]
 end_of_line = lf
-indent_size = 4
-
-indent_size = 4
-
-[*.{cs,vb}]
