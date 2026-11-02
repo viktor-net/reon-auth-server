@@ -70,6 +70,11 @@
 
 ## Выполнено вне эпика
 
+- **local-20261102-02 — Scalar-документация OpenAPI для API Keycloak.**
+  Контейнер `reon-auth-scalar` (`scalarapi/api-reference`) и спецификация
+  `docs/api/openapi.yaml` (OIDC-эндпоинты realm `reon` + подмножество Admin
+  REST API); публикация через nginx на `http://localhost:8090/docs/` —
+  same-origin с API, поэтому «Try it» работает без CORS; плоские группы тегов.
 - **local-20261102-01 — синтетические клиенты и пользователи стенда.** 5
   клиентов сервисов (`mdm-service`, `reon-s3-server`, `reon-process-backend`,
   `reon-admin-panel`, `reon-process-ui`), 12 синтетических пользователей,
