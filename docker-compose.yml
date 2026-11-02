@@ -1,0 +1,143 @@
+# DEV-стенд аутентификации/авторизации ИС РЕОН 2.0.
+#
+# Состав:
+#   reon-auth-nginx         — reverse proxy, единая точка входа (порт 8090)
+#   reon-auth-keycloak      — IdP Keycloak (порт 8084, только для отладки/админки)
+#   reon-auth-postgres      — БД Keycloak (порт 5434)
+#   reon-auth-keycloak-init — one-shot применение realm.yml и dev-users.yml
+#                             через keycloak-config-cli (идемпотентно)
+#
+# Все секреты читаются из окружения (см. .env.example). Значения по умолчанию —
+# только DEV-заглушки, чтобы `docker compose up -d` работал с чистого клона.
+#
+# Порты 8080, 8081, 8082, 5433 заняты другим стендом (reon-s3-*) — не использовать.
+
+name: reon-auth
+
+services:
+  reon-auth-postgres:
+    image: postgres:16-alpine
+    container_name: reon-auth-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-dev-keycloak-db-change-me}
+    ports:
+      - "5434:5432"
+    volumes:
+      - reon-auth-keycloak-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - reon-auth
+
+  reon-auth-keycloak:
+    image: quay.io/keycloak/keycloak:26.5.5
+    container_name: reon-auth-keycloak
+    restart: unless-stopped
+    # start-dev: DEV-режим (http, без строгой проверки hostname). Продовый режим
+    # `start` требует TLS/hostname и на локальном стенде не нужен.
+    command: ["start-dev"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://reon-auth-postgres:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-dev-keycloak-db-change-me}
+      # Bootstrap-администратор master realm (Keycloak 26: KC_BOOTSTRAP_ADMIN_*).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-dev-admin-change-me}
+      # Внешний адрес IdP фиксирован: все issuer/redirect URL в токенах указывают
+      # на точку входа nginx, а не на внутренний порт Keycloak.
+      KC_HOSTNAME: http://localhost:8090
+      KC_HTTP_ENABLED: "true"
+      # Доверяем X-Forwarded-* от nginx.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info
+      # Фича scripts НЕ включается: в Keycloak 26.5.5 скриптовых protocol
+      # mappers нет (SCRIPTS оставляет только script-аутентификаторы), поэтому
+      # claim org_id собирается штатным oidc-usermodel-attribute-mapper из
+      # пользовательского атрибута (см. комментарий у маппера org_id в
+      # docker/keycloak/realm.yml). Это снимает риск от preview-фичи.
+    ports:
+      - "8084:8080"
+    depends_on:
+      reon-auth-postgres:
+        condition: service_healthy
+    # Health-эндпоинты Keycloak 26 живут на management-порту 9000.
+    # curl в образе нет, поэтому проверяем через bash /dev/tcp.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "{ printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; head -1 | grep -q ' 200'; } 0<>/dev/tcp/127.0.0.1/9000"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    networks:
+      - reon-auth
+
+  # One-shot сервис: применяет docker/keycloak/*.yml и завершается.
+  # Повторный запуск (`docker compose run --rm reon-auth-keycloak-init`)
+  # идемпотентен: keycloak-config-cli приводит realm к состоянию из файлов.
+  reon-auth-keycloak-init:
+    image: quay.io/adorsys/keycloak-config-cli:6.5.1-26.5.5
+    container_name: reon-auth-keycloak-init
+    restart: "no"
+    environment:
+      KEYCLOAK_URL: http://reon-auth-keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-dev-admin-change-me}
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: 120s
+      IMPORT_FILES_LOCATIONS: /config/*.yml
+      # Подстановка $(env:...) в realm.yml: секреты clients не хранятся в конфиге.
+      IMPORT_VARSUBSTITUTION_ENABLED: "true"
+      IMPORT_VARSUBSTITUTION_UNDEFINEDISERROR: "true"
+      LOGGING_LEVEL_ROOT: info
+      REON_SERVICE_CLIENT_SECRET: ${REON_SERVICE_CLIENT_SECRET:-dev-reon-service-secret-change-me}
+      REON_DEV_SMOKE_CLIENT_SECRET: ${REON_DEV_SMOKE_CLIENT_SECRET:-dev-reon-dev-smoke-secret-change-me}
+    # Порядок импорта важен: keycloak-config-cli сортирует файлы по пути, а
+    # пользователи ссылаются на группы по путям (/reon/hq), поэтому realm.yml
+    # с группами должен примениться первым. Имена файлов в репозитории остаются
+    # смысловыми, а порядок задаётся точками монтирования.
+    volumes:
+      - ./docker/keycloak/realm.yml:/config/10-realm.yml:ro
+      - ./docker/keycloak/dev-users.yml:/config/20-dev-users.yml:ro
+    depends_on:
+      reon-auth-keycloak:
+        condition: service_healthy
+    networks:
+      - reon-auth
+
+  reon-auth-nginx:
+    image: nginx:1.27-alpine
+    container_name: reon-auth-nginx
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      reon-auth-keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - reon-auth
+
+volumes:
+  reon-auth-keycloak-db:
+
+networks:
+  reon-auth:
+    name: reon-auth

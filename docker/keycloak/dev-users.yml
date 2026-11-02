@@ -1,0 +1,76 @@
+# DEV-пользователи стенда ИС РЕОН 2.0.
+#
+# ВНИМАНИЕ: файл содержит простые DEV-пароли. Это допустимо только для
+# локального стенда (CONTRIBUTIONS.md, раздел «Правила»): реальных пользователей
+# и реальных секретов здесь нет, домен example.invalid не маршрутизируется.
+#
+# Роли пользователям НЕ назначаются напрямую: они приходят через группы
+# (иерархический RBAC). Группы и их атрибуты описаны в realm.yml.
+#
+# org_id: источник истины — атрибут ГРУППЫ в realm.yml. Дополнительно то же
+# значение продублировано атрибутом пользователя: в Keycloak 26.5.5 нет
+# штатного маппера атрибута группы в claim (а скриптовых protocol mappers в
+# образе нет), поэтому claim org_id собирается из атрибута пользователя.
+# Дубль — ВРЕМЕННОЕ DEV-решение, значения обязаны совпадать с группой.
+
+realm: reon
+
+users:
+  # Master Admin: группы /reon/hq (орг-принадлежность) и /reon/admins
+  # (формальная привязка, роль MASTER_ADMIN приходит через неё).
+  - username: dev-admin
+    enabled: true
+    email: dev-admin@example.invalid
+    firstName: "DEV"
+    lastName: "Администратор"
+    emailVerified: true
+    groups:
+      - /reon/hq
+      - /reon/admins
+    # DEV-зеркало атрибута org_id группы /reon/hq (см. комментарий в шапке)
+    attributes:
+      org_id:
+        - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    credentials:
+      - type: password
+        # DEV-пароль, только для локального стенда
+        value: "dev-admin-pass"
+        temporary: false
+
+  # Финансовый отдел: группа /reon/hq/finance, роли report:read и report:delete.
+  - username: dev-finance
+    enabled: true
+    email: dev-finance@example.invalid
+    firstName: "DEV"
+    lastName: "Финансист"
+    emailVerified: true
+    groups:
+      - /reon/hq/finance
+    # DEV-зеркало атрибута org_id группы /reon/hq/finance
+    attributes:
+      org_id:
+        - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    credentials:
+      - type: password
+        # DEV-пароль, только для локального стенда
+        value: "dev-finance-pass"
+        temporary: false
+
+  # Филиал: группа /reon/branch-1, роль report:read.
+  - username: dev-branch
+    enabled: true
+    email: dev-branch@example.invalid
+    firstName: "DEV"
+    lastName: "Сотрудник филиала"
+    emailVerified: true
+    groups:
+      - /reon/branch-1
+    # DEV-зеркало атрибута org_id группы /reon/branch-1
+    attributes:
+      org_id:
+        - "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+    credentials:
+      - type: password
+        # DEV-пароль, только для локального стенда
+        value: "dev-branch-pass"
+        temporary: false

@@ -1,0 +1,305 @@
+# DEV-конфигурация realm ИС РЕОН 2.0.
+#
+# Применяется сервисом reon-auth-keycloak-init (keycloak-config-cli), идемпотентно.
+# Контракт (не менять без согласования, см. brief local-20261101-01 v2):
+#   realm: reon; issuer через proxy: http://localhost:8090/realms/reon
+#   claims: realm_access.roles, groups (полные пути), org_id (строка; см. маппер
+#   org_id — атрибут группы как источник истины + DEV-зеркало у пользователя)
+#   audience: aud содержит reon-api для reon-admin-web и reon-service
+#   access-токен 15 минут, refresh 8 часов
+#
+# Секреты клиентов подставляются из переменных окружения (подстановка
+# keycloak-config-cli, префикс env). Образец значений — .env.example;
+# реальных секретов в файле нет.
+
+realm: reon
+enabled: true
+displayName: "ИС РЕОН 2.0 (DEV)"
+
+# DEV-стенд работает по http на localhost: TLS-терминации здесь нет.
+sslRequired: none
+registrationAllowed: false
+registrationEmailAsUsername: false
+loginWithEmailAllowed: true
+duplicateEmailsAllowed: false
+resetPasswordAllowed: false
+editUsernameAllowed: false
+# Отключаем brute-force защиту: smoke-тесты многократно логинятся dev-пользователями.
+bruteForceProtected: false
+verifyEmail: false
+
+# Русская страница входа (формовая аутентификация — основной способ входа на DEV).
+internationalizationEnabled: true
+supportedLocales:
+  - ru
+  - en
+defaultLocale: ru
+
+# --- Время жизни токенов (DEV) ---
+# access-токен: 15 минут (значение в СЕКУНДАХ: 15 * 60 = 900)
+accessTokenLifespan: 900
+# refresh-токен: 8 часов простоя и 8 часов максимальной жизни SSO-сессии
+ssoSessionIdleTimeout: 28800
+ssoSessionMaxLifespan: 28800
+revokeRefreshToken: false
+refreshTokenMaxReuse: 0
+
+# --- Realm-роли (capabilities) ---
+# Роли назначаются на ГРУППЫ, не на отдельных пользователей (иерархический RBAC).
+roles:
+  realm:
+    - name: MASTER_ADMIN
+      description: "Сквозной доступ мимо проверок иерархии (Master Admin)"
+    - name: report:read
+      description: "Чтение отчётов"
+    - name: report:delete
+      description: "Удаление отчётов"
+
+# --- Орг-структура и ABAC-якорь ---
+# org_id ставится явно каждой группе (не наследуется от родителя) и попадает в JWT.
+# UUID фиксированы для DEV-стенда:
+#   /reon/hq, /reon/hq/finance, /reon/admins -> 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d (A)
+#   /reon/branch-1                            -> 1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e (B)
+groups:
+  - name: reon
+    subGroups:
+      - name: hq
+        attributes:
+          org_id:
+            - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        subGroups:
+          - name: finance
+            attributes:
+              org_id:
+                - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            realmRoles:
+              - report:read
+              - report:delete
+      # Привязка мастер-админов: формальная группа вне орг-дерева.
+      # MASTER_ADMIN намеренно НЕ висит на /reon/hq: роли наследуются вниз по
+      # дереву, и тогда сквозной доступ получили бы все подгруппы (finance и др.).
+      # org_id = UUID A — та же организация, что у /reon/hq (DEV-контракт).
+      - name: admins
+        attributes:
+          org_id:
+            - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        realmRoles:
+          - MASTER_ADMIN
+      - name: branch-1
+        attributes:
+          org_id:
+            - "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        realmRoles:
+          - report:read
+
+# --- Клиентские scopes: общий контракт claims для всех клиентов РЕОН ---
+clientScopes:
+  # Контрактные claims: groups (полные пути групп) и org_id (атрибут группы).
+  - name: reon-claims
+    description: "Контракт claims РЕОН: groups (полные пути) и org_id (атрибут группы)"
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "false"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      # Стандартный mapper членства в группах: массив полных путей, например
+      # ["/reon/hq/finance"]. Пользователь состоит в одной группе (контракт DEV).
+      - name: groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        consentRequired: false
+        config:
+          claim.name: groups
+          full.path: "true"
+          access.token.claim: "true"
+          id.token.claim: "true"
+          userinfo.token.claim: "true"
+      # ABAC-якорь org_id.
+      #
+      # ВРЕМЕННОЕ DEV-решение (исправлено в attempt 3 по факту проверки):
+      # в Keycloak 26.5.5 штатного маппера атрибута ГРУППЫ нет
+      # (oidc-group-attribute-mapper не существует), а скриптовых protocol
+      # mappers в образе тоже нет: при включённом KC_FEATURES=scripts
+      # GET /admin/serverinfo перечисляет SCRIPTS как enabled, но провайдера
+      # oidc-script-based-protocol-mapper в списке protocol-mapper НЕТ
+      # (фича SCRIPTS в 26.x оставляет только script-аутентификаторы).
+      # Поэтому claim собирается штатным oidc-usermodel-attribute-mapper из
+      # пользовательского атрибута org_id. Атрибут на ГРУППАХ остаётся
+      # источником истины (иерархия RBAC и будущая синхронизация с реестром
+      # орг-структуры), а атрибут пользователя в docker/keycloak/dev-users.yml —
+      # его DEV-зеркало: без него claim в 26.5 не выдать, не написав свой
+      # protocol mapper (это код приложения, вне скоупа задачи).
+      # В prod org_id должен выдаваться реестром орг-структуры/синхронизацией,
+      # а не дублированием атрибута (будущая задача).
+      - name: org_id
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          claim.name: org_id
+          jsonType.label: String
+          multivalued: "false"
+          user.attribute: org_id
+          access.token.claim: "true"
+          id.token.claim: "true"
+          userinfo.token.claim: "true"
+          introspection.token.claim: "true"
+
+  # Audience для API: токены содержат aud: reon-api.
+  - name: reon-api-audience
+    description: "Добавляет reon-api в aud access-токена"
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "false"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: aud-reon-api
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.client.audience: reon-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+
+# --- Scope mappings: какие realm-роли разрешено класть в токен ---
+# ВАЖНО (причина дефекта attempt 1): у клиентов fullScopeAllowed: false, поэтому
+# Keycloak кладёт realm-роли в токен ТОЛЬКО если они разрешены scope mapping
+# клиентского scope, подключённого к клиенту (client scope `roles` при этом тоже
+# обязателен — он содержит сам маппер realm_access.roles). Без scope mappings
+# маппер отрабатывает по пустому списку и claim realm_access просто отсутствует.
+# Scope mapping ничего не ВЫДАЁТ пользователю: он лишь разрешает показать в
+# токене те роли, которые пользователь уже получил через группы.
+#
+# keycloak-config-cli считает этот список полным управляемым набором, поэтому
+# штатный mapping scope offline_access объявлен явно, чтобы не потерять его.
+scopeMappings:
+  - clientScope: offline_access
+    roles:
+      - offline_access
+  - clientScope: reon-claims
+    roles:
+      - MASTER_ADMIN
+      - report:read
+      - report:delete
+
+clients:
+  # Административная SPA (Angular): public client, authorization code + PKCE (S256).
+  # DEV-схема: фронтенд ходит в Keycloak напрямую, BFF отложен (см. brief v2).
+  # Секрета нет: public client не может его хранить. ROPC выключен.
+  - clientId: reon-admin-web
+    name: "РЕОН 2.0 — админ-панель (SPA, DEV)"
+    description: "Public SPA: authorization code + PKCE S256, прямой ход в Keycloak (dev-only)"
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    fullScopeAllowed: false
+    rootUrl: "http://localhost:4200"
+    redirectUris:
+      - "http://localhost:4200/*"
+      - "http://localhost:4201/*"
+    webOrigins:
+      - "http://localhost:4200"
+      - "http://localhost:4201"
+    attributes:
+      # PKCE обязателен: только S256.
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "http://localhost:4200/*"
+    defaultClientScopes:
+      - profile
+      - email
+      - roles
+      - web-origins
+      - acr
+      - basic
+      - reon-claims
+      - reon-api-audience
+
+  # API РЕОН: только аудитория, собственных потоков получения токенов нет.
+  - clientId: reon-api
+    name: "РЕОН 2.0 — API (только аудитория)"
+    description: "Bearer-only клиент: используется только как aud в токенах"
+    enabled: true
+    protocol: openid-connect
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    fullScopeAllowed: false
+
+  # Межсервисные вызовы: client_credentials + service account.
+  - clientId: reon-service
+    name: "РЕОН 2.0 — сервисный клиент (DEV)"
+    description: "client_credentials для межсервисных вызовов"
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    secret: "$(env:REON_SERVICE_CLIENT_SECRET)"
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    fullScopeAllowed: false
+    defaultClientScopes:
+      - profile
+      - email
+      - roles
+      - web-origins
+      - acr
+      - basic
+      - reon-claims
+      - reon-api-audience
+
+  # DEV-клиент ТОЛЬКО для smoke-проверки стенда: direct access grants (ROPC).
+  # ROPC устарел (OAuth 2.1) и в продуктовых интеграциях запрещён; здесь включён
+  # осознанно, чтобы smoke-скрипт получал токены без браузера и без приложения.
+  - clientId: reon-dev-smoke
+    name: "DEV ONLY — smoke-клиент (ROPC)"
+    description: "Только для локального smoke-теста стенда: direct access grants. В проде запрещён."
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    secret: "$(env:REON_DEV_SMOKE_CLIENT_SECRET)"
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: false
+    fullScopeAllowed: false
+    defaultClientScopes:
+      - profile
+      - email
+      - roles
+      - web-origins
+      - acr
+      - basic
+      - reon-claims
+      - reon-api-audience
+
+# --- СУДИР: будущая интеграция с внешним источником аутентификации ---
+# Будущая интеграция с СУДИР, не активно. Брокер OIDC (identity brokering)
+# появится отдельной задачей; рабочих значений, адресов и секретов здесь нет.
+#
+# identityProviders:
+#   - alias: sudir
+#     displayName: "СУДИР"
+#     providerId: oidc
+#     enabled: false
+#     trustEmail: false
+#     storeToken: false
+#     addReadTokenRoleOnCreate: false
+#     firstBrokerLoginFlowAlias: first broker login
+#     config:
+#       clientId: "<client-id-выдаётся-СУДИР>"
+#       clientSecret: "<секрет-выдаётся-СУДИР>"
+#       authorizationUrl: "<authorization-endpoint-СУДИР>"
+#       tokenUrl: "<token-endpoint-СУДИР>"
+#       userInfoUrl: "<userinfo-endpoint-СУДИР>"
+#       issuer: "<issuer-СУДИР>"
+#       defaultScope: "openid profile email"
+#       syncMode: IMPORT
