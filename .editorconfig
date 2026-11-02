@@ -1,0 +1,48 @@
+# Редакторские правила ИС РЕОН 2.0.
+# Источник истины по окончаниям строк — CONTRIBUTIONS.md, раздел «Окончания строк»:
+# рабочая копия CRLF, LF остаётся только у Dockerfile, .dockerignore, shell-скриптов,
+# конфигов Swift (*.conf) и Python (*.py).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Markdown: перевод строки внутри абзаца задаётся двумя пробелами в конце строки.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{json,jsonc,yml,yaml,ndjson,editorconfig}]
+indent_size = 2
+
+[*.{ps1,psm1,psd1}]
+indent_size = 4
+
+# LF-исключения (см. CONTRIBUTIONS.md): образы и скрипты вне Windows-хоста.
+[Dockerfile]
+end_of_line = lf
+
+[docker-compose*.yml]
+end_of_line = crlf
+
+[.dockerignore]
+end_of_line = lf
+
+[*.sh]
+end_of_line = lf
+indent_size = 4
+
+[*.conf]
+end_of_line = lf
+
+[*.py]
+end_of_line = lf
+indent_size = 4
+
+indent_size = 4
+
+[*.{cs,vb}]
