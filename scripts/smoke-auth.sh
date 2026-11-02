@@ -8,7 +8,10 @@
 #      groups, org_id (A/B), realm_access.roles, aud, TTL access-токена;
 #   3) SPA-клиент reon-admin-web без браузера: discovery, /auth с PKCE S256,
 #      параметры public-клиента через Admin API;
-#   4) заголовок Authorization ~9 КБ проходит через nginx (нет 400/414/431).
+#   4) заголовок Authorization ~9 КБ проходит через nginx (нет 400/414/431);
+#   5) синтетика (задача local-20261102-01): сервисные клиенты существуют,
+#      mdm-service получает токен по client_credentials, syn-mdm-editor и
+#      syn-branch-employee-1 получают ожидаемые capabilities и org_id.
 #
 # Зависимости: bash, curl, base64 (есть в Git Bash и любом Linux).
 # jq или python используются только для читаемого вывода JSON; сами проверки
@@ -405,6 +408,143 @@ case "$code" in
 esac
 if [ -s "$TMP_DIR/long.json" ]; then
     printf 'Ответ Keycloak: %s\n' "$(cat "$TMP_DIR/long.json")"
+fi
+
+# ---------------------------------------------------------------------------
+# 5. Синтетические клиенты и пользователи (задача local-20261102-01)
+# ---------------------------------------------------------------------------
+printf '\n== 5. Синтетические клиенты и пользователи\n'
+
+# Клиенты синтетики и секрет сервисного клиента mdm-service (DEV-заглушка).
+SYN_CLIENTS="mdm-service reon-s3-server reon-process-backend reon-admin-panel reon-process-ui"
+SYN_MDM_SERVICE_CLIENT_ID="mdm-service"
+SYN_MDM_SERVICE_CLIENT_SECRET="${MDM_SERVICE_CLIENT_SECRET:-dev-mdm-service-secret-change-me}"
+
+# a) клиенты синтетики существуют в realm (Admin API)
+syn_admin_code="$(curl -sS -o "$TMP_DIR/syn-admin-token.json" -w '%{http_code}' -X POST "$ADMIN_TOKEN_URL" \
+    -d grant_type=password \
+    -d client_id=admin-cli \
+    --data-urlencode "username=$ADMIN_USER" \
+    --data-urlencode "password=$ADMIN_PASSWORD" 2>/dev/null)"
+syn_admin_code="${syn_admin_code:-000}"
+syn_admin_token=""
+if [ "$syn_admin_code" = "200" ]; then
+    syn_admin_token="$(json_access_token "$TMP_DIR/syn-admin-token.json")"
+fi
+
+for syn_client in $SYN_CLIENTS; do
+    if [ -z "$syn_admin_token" ]; then
+        bad "синтетика: клиент $syn_client не проверен: нет токена администратора (HTTP $syn_admin_code)"
+        continue
+    fi
+    syn_clients_code="$(curl -sS -o "$TMP_DIR/syn-client-$syn_client.json" -w '%{http_code}' \
+        -H "Authorization: Bearer $syn_admin_token" \
+        "$BASE_URL/admin/realms/$REALM/clients?clientId=$syn_client" 2>/dev/null)"
+    syn_clients_code="${syn_clients_code:-000}"
+    if [ "$syn_clients_code" = "200" ] && grep -Fq "\"clientId\":\"$syn_client\"" "$TMP_DIR/syn-client-$syn_client.json"; then
+        ok "синтетика: Admin API, клиент $syn_client найден"
+    else
+        bad "синтетика: Admin API не вернул клиента $syn_client (HTTP $syn_clients_code)"
+    fi
+done
+
+# b) mdm-service: client_credentials
+printf '\n-- сервисный клиент %s --\n' "$SYN_MDM_SERVICE_CLIENT_ID"
+code="$(post_token "$TMP_DIR/syn-mdm-service.json" \
+    -d grant_type=client_credentials \
+    -d client_id="$SYN_MDM_SERVICE_CLIENT_ID" \
+    --data-urlencode "client_secret=$SYN_MDM_SERVICE_CLIENT_SECRET")"
+code="${code:-000}"
+syn_mdm_service_token=""
+if [ "$code" = "200" ]; then
+    syn_mdm_service_token="$(json_access_token "$TMP_DIR/syn-mdm-service.json")"
+fi
+
+if [ -n "$syn_mdm_service_token" ]; then
+    ok "синтетика: $SYN_MDM_SERVICE_CLIENT_ID вернул токен по client_credentials (HTTP 200)"
+    jwt_payload "$syn_mdm_service_token" >"$TMP_DIR/syn-mdm-service.payload.json"
+    syn_mdm_service_payload="$(cat "$TMP_DIR/syn-mdm-service.payload.json")"
+    printf -- '--- claims access-токена %s ---\n' "$SYN_MDM_SERVICE_CLIENT_ID"
+    pretty_file "$TMP_DIR/syn-mdm-service.payload.json"
+    printf -- '---\n'
+    check_claim_equals "синтетика: $SYN_MDM_SERVICE_CLIENT_ID azp = $SYN_MDM_SERVICE_CLIENT_ID" \
+        "$syn_mdm_service_payload" "azp" "$SYN_MDM_SERVICE_CLIENT_ID"
+    check_contains "синтетика: $SYN_MDM_SERVICE_CLIENT_ID aud содержит reon-api" \
+        "$syn_mdm_service_payload" '"reon-api"'
+else
+    bad "синтетика: $SYN_MDM_SERVICE_CLIENT_ID client_credentials вернул HTTP $code"
+    bad "синтетика: $SYN_MDM_SERVICE_CLIENT_ID azp не проверен (нет токена)"
+    bad "синтетика: $SYN_MDM_SERVICE_CLIENT_ID aud не проверен (нет токена)"
+fi
+
+# c) syn-mdm-editor: запись мастер-данных, организация A
+printf '\n-- синтетический пользователь syn-mdm-editor --\n'
+code="$(post_token "$TMP_DIR/syn-mdm-editor.json" \
+    -d grant_type=password \
+    -d client_id="$SMOKE_CLIENT_ID" \
+    --data-urlencode "client_secret=$SMOKE_CLIENT_SECRET" \
+    -d username=syn-mdm-editor \
+    --data-urlencode "password=syn-mdm-editor-pass" \
+    -d scope=openid)"
+code="${code:-000}"
+syn_mdm_editor_token=""
+if [ "$code" = "200" ]; then
+    syn_mdm_editor_token="$(json_access_token "$TMP_DIR/syn-mdm-editor.json")"
+fi
+
+if [ -n "$syn_mdm_editor_token" ]; then
+    ok "синтетика: syn-mdm-editor вернул токен (ROPC, HTTP 200)"
+    jwt_payload "$syn_mdm_editor_token" >"$TMP_DIR/syn-mdm-editor.payload.json"
+    syn_mdm_editor_payload="$(cat "$TMP_DIR/syn-mdm-editor.payload.json")"
+    printf -- '--- claims access-токена syn-mdm-editor ---\n'
+    pretty_file "$TMP_DIR/syn-mdm-editor.payload.json"
+    printf -- '---\n'
+    check_contains "синтетика: syn-mdm-editor realm_access.roles содержит mdm:read" \
+        "$syn_mdm_editor_payload" '"mdm:read"'
+    check_contains "синтетика: syn-mdm-editor realm_access.roles содержит mdm:write" \
+        "$syn_mdm_editor_payload" '"mdm:write"'
+    check_claim_equals "синтетика: syn-mdm-editor org_id = $ORG_ID_A" \
+        "$syn_mdm_editor_payload" "org_id" "$ORG_ID_A"
+    check_contains "синтетика: syn-mdm-editor groups содержит /reon/hq" \
+        "$syn_mdm_editor_payload" '"/reon/hq"'
+else
+    bad "синтетика: syn-mdm-editor ROPC вернул HTTP $code"
+    bad "синтетика: syn-mdm-editor realm_access.roles содержит mdm:read (нет токена)"
+    bad "синтетика: syn-mdm-editor realm_access.roles содержит mdm:write (нет токена)"
+    bad "синтетика: syn-mdm-editor org_id не проверен (нет токена)"
+    bad "синтетика: syn-mdm-editor groups не проверен (нет токена)"
+fi
+
+# d) syn-branch-employee-1: только чтение, организация B
+printf '\n-- синтетический пользователь syn-branch-employee-1 --\n'
+code="$(post_token "$TMP_DIR/syn-branch-employee-1.json" \
+    -d grant_type=password \
+    -d client_id="$SMOKE_CLIENT_ID" \
+    --data-urlencode "client_secret=$SMOKE_CLIENT_SECRET" \
+    -d username=syn-branch-employee-1 \
+    --data-urlencode "password=syn-branch-employee-1-pass" \
+    -d scope=openid)"
+code="${code:-000}"
+syn_branch_token=""
+if [ "$code" = "200" ]; then
+    syn_branch_token="$(json_access_token "$TMP_DIR/syn-branch-employee-1.json")"
+fi
+
+if [ -n "$syn_branch_token" ]; then
+    ok "синтетика: syn-branch-employee-1 вернул токен (ROPC, HTTP 200)"
+    jwt_payload "$syn_branch_token" >"$TMP_DIR/syn-branch-employee-1.payload.json"
+    syn_branch_payload="$(cat "$TMP_DIR/syn-branch-employee-1.payload.json")"
+    printf -- '--- claims access-токена syn-branch-employee-1 ---\n'
+    pretty_file "$TMP_DIR/syn-branch-employee-1.payload.json"
+    printf -- '---\n'
+    check_not_contains "синтетика: syn-branch-employee-1 realm_access.roles НЕ содержит mdm:write" \
+        "$syn_branch_payload" '"mdm:write"'
+    check_claim_equals "синтетика: syn-branch-employee-1 org_id = $ORG_ID_B" \
+        "$syn_branch_payload" "org_id" "$ORG_ID_B"
+else
+    bad "синтетика: syn-branch-employee-1 ROPC вернул HTTP $code"
+    bad "синтетика: syn-branch-employee-1 realm_access.roles НЕ содержит mdm:write (нет токена)"
+    bad "синтетика: syn-branch-employee-1 org_id не проверен (нет токена)"
 fi
 
 # ---------------------------------------------------------------------------

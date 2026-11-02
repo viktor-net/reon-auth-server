@@ -54,6 +54,20 @@ roles:
       description: "Чтение отчётов"
     - name: report:delete
       description: "Удаление отчётов"
+    # Capabilities сервисов стенда (см. brief local-20261102-01).
+    # Назначаются на группы, как и остальные роли (иерархический RBAC).
+    - name: mdm:read
+      description: "Чтение мастер-данных (mdm-service)"
+    - name: mdm:write
+      description: "Запись мастер-данных (mdm-service)"
+    - name: s3:read
+      description: "Чтение файлов (reon-s3-server)"
+    - name: s3:write
+      description: "Загрузка и изменение файлов (reon-s3-server)"
+    - name: process:read
+      description: "Просмотр процессов (reon-process-backend)"
+    - name: process:start
+      description: "Запуск процессов (reon-process-backend)"
 
 # --- Орг-структура и ABAC-якорь ---
 # org_id ставится явно каждой группе (не наследуется от родителя) и попадает в JWT.
@@ -67,6 +81,15 @@ groups:
         attributes:
           org_id:
             - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        # Полный набор capabilities головного офиса (задача local-20261102-01).
+        # Роли наследуются вниз: /reon/hq/finance получает их автоматически.
+        realmRoles:
+          - mdm:read
+          - mdm:write
+          - s3:read
+          - s3:write
+          - process:read
+          - process:start
         subGroups:
           - name: finance
             attributes:
@@ -75,6 +98,7 @@ groups:
             realmRoles:
               - report:read
               - report:delete
+              - mdm:read
       # Привязка мастер-админов: формальная группа вне орг-дерева.
       # MASTER_ADMIN намеренно НЕ висит на /reon/hq: роли наследуются вниз по
       # дереву, и тогда сквозной доступ получили бы все подгруппы (finance и др.).
@@ -91,6 +115,10 @@ groups:
             - "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
         realmRoles:
           - report:read
+          # Филиал: чтение без записи (задача local-20261102-01).
+          - mdm:read
+          - s3:read
+          - process:read
 
 # --- Клиентские scopes: общий контракт claims для всех клиентов РЕОН ---
 clientScopes:
@@ -182,6 +210,14 @@ scopeMappings:
       - MASTER_ADMIN
       - report:read
       - report:delete
+      # Capabilities сервисов: без явного scope mapping роли не попадут в токен
+      # (fullScopeAllowed: false у клиентов), см. комментарий к блоку.
+      - mdm:read
+      - mdm:write
+      - s3:read
+      - s3:write
+      - process:read
+      - process:start
 
 clients:
   # Административная SPA (Angular): public client, authorization code + PKCE (S256).

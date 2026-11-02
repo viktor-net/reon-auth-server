@@ -1,0 +1,427 @@
+{
+  "realm": "reon",
+  "ifResourceExists": "SKIP",
+  "clients": [
+    {
+      "clientId": "reon-admin-panel",
+      "name": "РЕОН 2.0 — админ-панель (SPA, DEV)",
+      "description": "Public SPA: authorization code + PKCE S256, redirect 4200/4300 (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "rootUrl": "http://localhost:4200",
+      "redirectUris": [
+        "http://localhost:4200/*",
+        "http://localhost:4300/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200",
+        "http://localhost:4300"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/*"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    },
+    {
+      "clientId": "reon-process-ui",
+      "name": "РЕОН 2.0 — веб-интерфейс процессов (SPA, DEV)",
+      "description": "Public SPA Camunda UI: authorization code + PKCE S256 (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "rootUrl": "http://localhost:8085",
+      "redirectUris": [
+        "http://localhost:8085/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8085"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8085/*"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    },
+    {
+      "clientId": "mdm-service",
+      "name": "РЕОН 2.0 — сервис мастер-данных (DEV)",
+      "description": "client_credentials + service account для mdm-service (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "__MDM_SERVICE_CLIENT_SECRET__",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    },
+    {
+      "clientId": "reon-s3-server",
+      "name": "РЕОН 2.0 — файловое хранилище (DEV)",
+      "description": "client_credentials + service account для reon-s3-server (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "__REON_S3_SERVER_CLIENT_SECRET__",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    },
+    {
+      "clientId": "reon-process-backend",
+      "name": "РЕОН 2.0 — процессный бэкенд Camunda (DEV)",
+      "description": "client_credentials + service account для reon-process-backend (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "__REON_PROCESS_BACKEND_CLIENT_SECRET__",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "syn-mdm-editor",
+      "enabled": true,
+      "email": "syn-mdm-editor@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Редактор мастер-данных",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-mdm-editor-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-mdm-reader",
+      "enabled": true,
+      "email": "syn-mdm-reader@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Читатель мастер-данных",
+      "emailVerified": true,
+      "groups": [
+        "/reon/branch-1"
+      ],
+      "attributes": {
+        "org_id": [
+          "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-mdm-reader-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-s3-operator",
+      "enabled": true,
+      "email": "syn-s3-operator@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Оператор файлов",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-s3-operator-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-s3-reader",
+      "enabled": true,
+      "email": "syn-s3-reader@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Читатель файлов",
+      "emailVerified": true,
+      "groups": [
+        "/reon/branch-1"
+      ],
+      "attributes": {
+        "org_id": [
+          "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-s3-reader-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-camunda-designer",
+      "enabled": true,
+      "email": "syn-camunda-designer@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Дизайнер процессов",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-camunda-designer-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-camunda-viewer",
+      "enabled": true,
+      "email": "syn-camunda-viewer@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Наблюдатель процессов",
+      "emailVerified": true,
+      "groups": [
+        "/reon/branch-1"
+      ],
+      "attributes": {
+        "org_id": [
+          "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-camunda-viewer-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-finance-lead",
+      "enabled": true,
+      "email": "syn-finance-lead@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Руководитель финансов",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq/finance"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-finance-lead-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-finance-analyst",
+      "enabled": true,
+      "email": "syn-finance-analyst@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Финансовый аналитик",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq/finance"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-finance-analyst-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-branch-employee-1",
+      "enabled": true,
+      "email": "syn-branch-employee-1@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Сотрудник филиала 1",
+      "emailVerified": true,
+      "groups": [
+        "/reon/branch-1"
+      ],
+      "attributes": {
+        "org_id": [
+          "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-branch-employee-1-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-branch-employee-2",
+      "enabled": true,
+      "email": "syn-branch-employee-2@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Сотрудник филиала 2",
+      "emailVerified": true,
+      "groups": [
+        "/reon/branch-1"
+      ],
+      "attributes": {
+        "org_id": [
+          "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-branch-employee-2-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-auditor",
+      "enabled": true,
+      "email": "syn-auditor@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Аудитор",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-auditor-pass",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "syn-admin",
+      "enabled": true,
+      "email": "syn-admin@example.invalid",
+      "firstName": "Синтетический",
+      "lastName": "Администратор",
+      "emailVerified": true,
+      "groups": [
+        "/reon/hq",
+        "/reon/admins"
+      ],
+      "attributes": {
+        "org_id": [
+          "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "syn-admin-pass",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

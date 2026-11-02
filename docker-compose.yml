@@ -115,6 +115,38 @@ services:
     networks:
       - reon-auth
 
+  # One-shot сервис: применяет синтетические клиенты и пользователей поверх
+  # уже импортированного realm (partial import, "ifResourceExists": "SKIP").
+  # Роли и привязки ролей к группам — в realm.yml (partial import SKIP не
+  # обновляет существующие группы). Повторный запуск идемпотентен.
+  reon-auth-synthetic-init:
+    image: curlimages/curl:8.11.0
+    container_name: reon-auth-synthetic-init
+    restart: "no"
+    # Скрипт монтируется из ./docker/keycloak/synthetic; запускаем через sh,
+    # потому что entrypoint образа — curl.
+    entrypoint: ["/bin/sh", "/data/init.sh"]
+    environment:
+      KEYCLOAK_URL: http://reon-auth-keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-dev-admin-change-me}
+      REALM: reon
+      # Секреты синтетических сервисных клиентов (только DEV-заглушки).
+      MDM_SERVICE_CLIENT_SECRET: ${MDM_SERVICE_CLIENT_SECRET:-dev-mdm-service-secret-change-me}
+      REON_S3_SERVER_CLIENT_SECRET: ${REON_S3_SERVER_CLIENT_SECRET:-dev-reon-s3-server-secret-change-me}
+      REON_PROCESS_BACKEND_CLIENT_SECRET: ${REON_PROCESS_BACKEND_CLIENT_SECRET:-dev-reon-process-backend-secret-change-me}
+    volumes:
+      - ./docker/keycloak/synthetic:/data:ro
+    depends_on:
+      reon-auth-keycloak:
+        condition: service_healthy
+      # Синтетика применяется только после базового импорта: нужен существующий
+      # realm с группами и client scopes.
+      reon-auth-keycloak-init:
+        condition: service_completed_successfully
+    networks:
+      - reon-auth
+
   reon-auth-nginx:
     image: nginx:1.27-alpine
     container_name: reon-auth-nginx

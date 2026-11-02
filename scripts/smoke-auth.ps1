@@ -11,7 +11,10 @@
          groups, org_id (A/B), realm_access.roles, aud, TTL access-токена;
       3) SPA-клиент reon-admin-web без браузера: discovery, /auth с PKCE S256,
          параметры public-клиента через Admin API;
-      4) заголовок Authorization ~9 КБ проходит через nginx (нет 400/414/431).
+      4) заголовок Authorization ~9 КБ проходит через nginx (нет 400/414/431);
+      5) синтетика (задача local-20261102-01): сервисные клиенты существуют,
+         mdm-service получает токен по client_credentials, syn-mdm-editor и
+         syn-branch-employee-1 получают ожидаемые capabilities и org_id.
 
     Зависимости: PowerShell 7+ (pwsh). JWT раскодируется средствами PowerShell,
     внешние утилиты не нужны.
@@ -469,6 +472,177 @@ switch ($longStatus) {
     }
 }
 if ($longBody) { Write-Host "Ответ Keycloak: $longBody" }
+
+# ---------------------------------------------------------------------------
+# 5. Синтетические клиенты и пользователи (задача local-20261102-01)
+# ---------------------------------------------------------------------------
+Write-Host ''
+Write-Host '== 5. Синтетические клиенты и пользователи'
+
+# Клиенты синтетики и секрет сервисного клиента mdm-service (DEV-заглушка).
+$synClients = @('mdm-service', 'reon-s3-server', 'reon-process-backend', 'reon-admin-panel', 'reon-process-ui')
+$synMdmServiceClientId = 'mdm-service'
+$synMdmServiceSecret = if ($env:MDM_SERVICE_CLIENT_SECRET) { $env:MDM_SERVICE_CLIENT_SECRET } else { 'dev-mdm-service-secret-change-me' }
+
+# a) клиенты синтетики существуют в realm (Admin API)
+$synAdminToken = $null
+$synAdminStatus = 0
+try {
+    $synAdminResp = Invoke-WebRequest -Uri $adminTokenUrl -Method Post -SkipHttpErrorCheck -ContentType 'application/x-www-form-urlencoded' -Body @{
+        grant_type = 'password'
+        client_id  = 'admin-cli'
+        username   = $adminUser
+        password   = $adminPassword
+    }
+    $synAdminStatus = [int]$synAdminResp.StatusCode
+    if ($synAdminStatus -eq 200) { $synAdminToken = ($synAdminResp.Content | ConvertFrom-Json).access_token }
+} catch {
+    $synAdminStatus = 0
+}
+
+foreach ($synClientId in $synClients) {
+    if (-not $synAdminToken) {
+        Write-Fail "синтетика: клиент $synClientId не проверен: нет токена администратора (HTTP $synAdminStatus)"
+        continue
+    }
+    $synClientsStatus = 0
+    $synClientsJson = ''
+    try {
+        $synClientsResp = Invoke-WebRequest -Uri "$baseUrl/admin/realms/$realm/clients?clientId=$synClientId" `
+            -Headers @{ Authorization = "Bearer $synAdminToken" } -SkipHttpErrorCheck
+        $synClientsStatus = [int]$synClientsResp.StatusCode
+        $synClientsJson = $synClientsResp.Content
+    } catch {
+        $synClientsStatus = 0
+    }
+    if ($synClientsStatus -eq 200 -and $synClientsJson -match ('"clientId"\s*:\s*"' + [regex]::Escape($synClientId) + '"')) {
+        Write-Ok "синтетика: Admin API, клиент $synClientId найден"
+    } else {
+        Write-Fail "синтетика: Admin API не вернул клиента $synClientId (HTTP $synClientsStatus)"
+    }
+}
+
+# b) mdm-service: client_credentials
+Write-Host ''
+Write-Host "-- сервисный клиент $synMdmServiceClientId --"
+$synMdmResponse = Invoke-TokenRequest -Body @{
+    grant_type    = 'client_credentials'
+    client_id     = $synMdmServiceClientId
+    client_secret = $synMdmServiceSecret
+}
+$synMdmToken = $null
+if ($synMdmResponse.Status -eq 200) {
+    $synMdmToken = ($synMdmResponse.Content | ConvertFrom-Json).access_token
+}
+
+if ($synMdmToken) {
+    Write-Ok "синтетика: $synMdmServiceClientId вернул токен по client_credentials (HTTP 200)"
+    $synMdmPayloadJson = ConvertFrom-JwtPayload -Token $synMdmToken
+    Show-Claims -Title $synMdmServiceClientId -PayloadJson $synMdmPayloadJson
+    $synMdmClaims = $synMdmPayloadJson | ConvertFrom-Json
+    if ($synMdmClaims.azp -eq $synMdmServiceClientId) {
+        Write-Ok "синтетика: $synMdmServiceClientId azp = $synMdmServiceClientId"
+    } else {
+        Write-Fail "синтетика: $synMdmServiceClientId azp = $($synMdmClaims.azp), ожидалось $synMdmServiceClientId"
+    }
+    if ($synMdmClaims.aud -contains 'reon-api') {
+        Write-Ok "синтетика: $synMdmServiceClientId aud содержит reon-api"
+    } else {
+        Write-Fail "синтетика: $synMdmServiceClientId aud не содержит reon-api (aud=$($synMdmClaims.aud -join ','))"
+    }
+} else {
+    Write-Fail "синтетика: $synMdmServiceClientId client_credentials вернул HTTP $($synMdmResponse.Status)"
+    Write-Fail "синтетика: $synMdmServiceClientId azp не проверен (нет токена)"
+    Write-Fail "синтетика: $synMdmServiceClientId aud не проверен (нет токена)"
+}
+
+# c) syn-mdm-editor: запись мастер-данных, организация A
+Write-Host ''
+Write-Host '-- синтетический пользователь syn-mdm-editor --'
+$synMdmEditorResponse = Invoke-TokenRequest -Body @{
+    grant_type    = 'password'
+    client_id     = $smokeClientId
+    client_secret = $smokeClientSecret
+    username      = 'syn-mdm-editor'
+    password      = 'syn-mdm-editor-pass'
+    scope         = 'openid'
+}
+$synMdmEditorToken = $null
+if ($synMdmEditorResponse.Status -eq 200) {
+    $synMdmEditorToken = ($synMdmEditorResponse.Content | ConvertFrom-Json).access_token
+}
+
+if ($synMdmEditorToken) {
+    Write-Ok 'синтетика: syn-mdm-editor вернул токен (ROPC, HTTP 200)'
+    $synMdmEditorPayloadJson = ConvertFrom-JwtPayload -Token $synMdmEditorToken
+    Show-Claims -Title 'syn-mdm-editor' -PayloadJson $synMdmEditorPayloadJson
+    $synMdmEditorClaims = $synMdmEditorPayloadJson | ConvertFrom-Json
+    $synMdmEditorRoles = @($synMdmEditorClaims.realm_access.roles)
+    if ($synMdmEditorRoles -contains 'mdm:read') {
+        Write-Ok 'синтетика: syn-mdm-editor realm_access.roles содержит mdm:read'
+    } else {
+        Write-Fail 'синтетика: syn-mdm-editor realm_access.roles не содержит mdm:read'
+    }
+    if ($synMdmEditorRoles -contains 'mdm:write') {
+        Write-Ok 'синтетика: syn-mdm-editor realm_access.roles содержит mdm:write'
+    } else {
+        Write-Fail 'синтетика: syn-mdm-editor realm_access.roles не содержит mdm:write'
+    }
+    if ($synMdmEditorClaims.org_id -eq $orgIdA) {
+        Write-Ok "синтетика: syn-mdm-editor org_id = $orgIdA"
+    } else {
+        Write-Fail "синтетика: syn-mdm-editor org_id = $($synMdmEditorClaims.org_id), ожидалось $orgIdA"
+    }
+    if ($synMdmEditorClaims.groups -contains '/reon/hq') {
+        Write-Ok 'синтетика: syn-mdm-editor groups содержит /reon/hq'
+    } else {
+        Write-Fail 'синтетика: syn-mdm-editor groups не содержит /reon/hq'
+    }
+} else {
+    Write-Fail "синтетика: syn-mdm-editor ROPC вернул HTTP $($synMdmEditorResponse.Status)"
+    Write-Fail 'синтетика: syn-mdm-editor realm_access.roles содержит mdm:read (нет токена)'
+    Write-Fail 'синтетика: syn-mdm-editor realm_access.roles содержит mdm:write (нет токена)'
+    Write-Fail 'синтетика: syn-mdm-editor org_id не проверен (нет токена)'
+    Write-Fail 'синтетика: syn-mdm-editor groups не проверен (нет токена)'
+}
+
+# d) syn-branch-employee-1: только чтение, организация B
+Write-Host ''
+Write-Host '-- синтетический пользователь syn-branch-employee-1 --'
+$synBranchResponse = Invoke-TokenRequest -Body @{
+    grant_type    = 'password'
+    client_id     = $smokeClientId
+    client_secret = $smokeClientSecret
+    username      = 'syn-branch-employee-1'
+    password      = 'syn-branch-employee-1-pass'
+    scope         = 'openid'
+}
+$synBranchToken = $null
+if ($synBranchResponse.Status -eq 200) {
+    $synBranchToken = ($synBranchResponse.Content | ConvertFrom-Json).access_token
+}
+
+if ($synBranchToken) {
+    Write-Ok 'синтетика: syn-branch-employee-1 вернул токен (ROPC, HTTP 200)'
+    $synBranchPayloadJson = ConvertFrom-JwtPayload -Token $synBranchToken
+    Show-Claims -Title 'syn-branch-employee-1' -PayloadJson $synBranchPayloadJson
+    $synBranchClaims = $synBranchPayloadJson | ConvertFrom-Json
+    $synBranchRoles = @($synBranchClaims.realm_access.roles)
+    if ($synBranchRoles -notcontains 'mdm:write') {
+        Write-Ok 'синтетика: syn-branch-employee-1 realm_access.roles НЕ содержит mdm:write'
+    } else {
+        Write-Fail 'синтетика: syn-branch-employee-1 realm_access.roles содержит mdm:write'
+    }
+    if ($synBranchClaims.org_id -eq $orgIdB) {
+        Write-Ok "синтетика: syn-branch-employee-1 org_id = $orgIdB"
+    } else {
+        Write-Fail "синтетика: syn-branch-employee-1 org_id = $($synBranchClaims.org_id), ожидалось $orgIdB"
+    }
+} else {
+    Write-Fail "синтетика: syn-branch-employee-1 ROPC вернул HTTP $($synBranchResponse.Status)"
+    Write-Fail 'синтетика: syn-branch-employee-1 realm_access.roles НЕ содержит mdm:write (нет токена)'
+    Write-Fail 'синтетика: syn-branch-employee-1 org_id не проверен (нет токена)'
+}
 
 # ---------------------------------------------------------------------------
 # Итог
