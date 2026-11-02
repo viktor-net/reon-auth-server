@@ -6,6 +6,8 @@
 #   reon-auth-postgres      — БД Keycloak (порт 5434)
 #   reon-auth-keycloak-init — one-shot применение realm.yml и dev-users.yml
 #                             через keycloak-config-cli (идемпотентно)
+#   reon-auth-scalar        — Scalar API Reference: интерактивная документация
+#                             OpenAPI, публикуется nginx по адресу /docs/
 #
 # Все секреты читаются из окружения (см. .env.example). Значения по умолчанию —
 # только DEV-заглушки, чтобы `docker compose up -d` работал с чистого клона.
@@ -159,11 +161,46 @@ services:
       - "8090:8080"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Страница-указатель монтируется файлом: в nginx.conf она не помещается
+      # целиком (лимит параметра return 200 ~4094 байта), а ссылки добавляют объём.
+      - ./docker/nginx/index.html:/usr/share/nginx/html/index.html:ro
     depends_on:
       reon-auth-keycloak:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - reon-auth
+
+  # Scalar API Reference: рендерит docs/api/openapi.yaml в интерактивную
+  # документацию с кнопкой «Try it». Наружу публикуется только через nginx
+  # (location /docs/), чтобы запросы из браузера шли same-origin с API и CORS
+  # не требовался. Прямой порт 8091 — для отладки самого контейнера.
+  reon-auth-scalar:
+    image: scalarapi/api-reference:0.6.21
+    container_name: reon-auth-scalar
+    restart: unless-stopped
+    environment:
+      # Префикс, под которым контейнер раздаёт UI и ассеты. Nginx срезает
+      # /docs/ перед проксированием (proxy_pass с завершающим /).
+      BASE_PATH: /docs
+      # Scalar по умолчанию раскрывает первый тег (OIDC) в левой панели.
+      # false оставляет все группы свёрнутыми до выбора пользователя.
+      # `sources` не задаём: спецификация монтируется в /docs и контейнер
+      # добавляет её к этой конфигурации сам.
+      API_REFERENCE_CONFIG: '{"defaultOpenFirstTag": false}'
+    ports:
+      - "8091:8080"
+    volumes:
+      # Спецификация монтируется как каталог документов: контейнер сам находит
+      # *.yaml и отдаёт их по /openapi/<имя файла>.
+      - ./docs/api:/docs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

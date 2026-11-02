@@ -2,7 +2,8 @@
 # Smoke-проверка DEV-стенда аутентификации ИС РЕОН 2.0.
 #
 # Всё делается через точку входа nginx (по умолчанию http://localhost:8090):
-#   0) стенд поднят, issuer в discovery совпадает с контрактом;
+#   0) стенд поднят, issuer в discovery совпадает с контрактом, страница-указатель
+#      на / и /healthz отдают корректный Content-Type;
 #   1) client_credentials для reon-service -> HTTP 200, JWT, aud содержит reon-api;
 #   2) ROPC (reon-dev-smoke) для dev-branch, dev-finance, dev-admin ->
 #      groups, org_id (A/B), realm_access.roles, aud, TTL access-токена;
@@ -195,6 +196,54 @@ else
     bad "discovery недоступен через nginx (HTTP $http_code). Стенд поднят? docker compose up -d"
     printf '\nИтог: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
     exit 1
+fi
+
+# Точка входа и healthcheck (задача local-20261102-03): / отдаёт страницу-
+# указатель с типом text/html (а не скачиваемый octet-stream), /healthz —
+# один заголовок Content-Type. Раньше add_header не применялся к 404, а на
+# /healthz вместе с default_type давал два заголовка Content-Type.
+entry_code="$(curl -sS -D "$TMP_DIR/root.headers" -o "$TMP_DIR/root.body" -w '%{http_code}' "$BASE_URL/" 2>/dev/null)"
+entry_code="${entry_code:-000}"
+if [ "$entry_code" = "200" ]; then
+    ok "точка входа: GET / -> 200"
+else
+    bad "точка входа: GET / вернул HTTP $entry_code (ожидалось 200)"
+fi
+entry_ctype="$(grep -i '^Content-Type:' "$TMP_DIR/root.headers" 2>/dev/null | tr -d '\r' | head -n 1)"
+case "$entry_ctype" in
+    *text/html*) ok "точка входа: Content-Type содержит text/html" ;;
+    *) bad "точка входа: Content-Type = ${entry_ctype:-<нет>}, ожидалось text/html" ;;
+esac
+entry_ctype_count="$(grep -ci '^Content-Type:' "$TMP_DIR/root.headers" 2>/dev/null || true)"
+if [ "$entry_ctype_count" = "1" ]; then
+    ok "точка входа: ровно один заголовок Content-Type"
+else
+    bad "точка входа: заголовков Content-Type = ${entry_ctype_count:-0}, ожидался один"
+fi
+entry_body="$(cat "$TMP_DIR/root.body" 2>/dev/null || true)"
+if printf '%s' "$entry_body" | grep -Fiq -- "discovery"; then
+    ok "точка входа: страница содержит ссылку на discovery"
+else
+    bad "точка входа: страница не содержит ссылку на discovery"
+fi
+
+healthz_code="$(curl -sS -D "$TMP_DIR/healthz.headers" -o "$TMP_DIR/healthz.body" -w '%{http_code}' "$BASE_URL/healthz" 2>/dev/null)"
+healthz_code="${healthz_code:-000}"
+if [ "$healthz_code" = "200" ]; then
+    ok "/healthz -> 200"
+else
+    bad "/healthz вернул HTTP $healthz_code (ожидалось 200)"
+fi
+healthz_ctype="$(grep -i '^Content-Type:' "$TMP_DIR/healthz.headers" 2>/dev/null | tr -d '\r' | head -n 1)"
+case "$healthz_ctype" in
+    *text/plain*) ok "/healthz: Content-Type содержит text/plain" ;;
+    *) bad "/healthz: Content-Type = ${healthz_ctype:-<нет>}, ожидалось text/plain" ;;
+esac
+healthz_ctype_count="$(grep -ci '^Content-Type:' "$TMP_DIR/healthz.headers" 2>/dev/null || true)"
+if [ "$healthz_ctype_count" = "1" ]; then
+    ok "/healthz: ровно один заголовок Content-Type"
+else
+    bad "/healthz: заголовков Content-Type = ${healthz_ctype_count:-0}, ожидался один"
 fi
 
 # ---------------------------------------------------------------------------

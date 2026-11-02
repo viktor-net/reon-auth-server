@@ -10,6 +10,13 @@ Dockerfile text eol=lf
 *.conf text eol=lf
 *.py text eol=lf
 
+# Спецификация API — источник для Scalar: LF обязателен, иначе правило
+# `* text=auto eol=crlf` перевернёт файл в CRLF при следующем checkout.
+docs/api/*.yaml text eol=lf
+
+# Страница-указатель nginx — конфиг-артефакт стенда, как nginx.conf: LF.
+docker/nginx/index.html text eol=lf
+
 # Бинарные файлы: Git не нормализует и не диффит их построчно.
 *.pdf binary
 *.png binary

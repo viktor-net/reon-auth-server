@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     Всё делается через точку входа nginx (по умолчанию http://localhost:8090):
-      0) стенд поднят, issuer в discovery совпадает с контрактом;
+      0) стенд поднят, issuer в discovery совпадает с контрактом, страница-указатель
+         на / и /healthz отдают корректный Content-Type;
       1) client_credentials для reon-service -> HTTP 200, JWT, aud содержит reon-api;
       2) ROPC (reon-dev-smoke) для dev-branch, dev-finance, dev-admin ->
          groups, org_id (A/B), realm_access.roles, aud, TTL access-токена;
@@ -162,6 +163,57 @@ if ($discoveryObj.issuer -eq $expectedIssuer) {
     Write-Ok "issuer в discovery = $expectedIssuer"
 } else {
     Write-Fail "issuer в discovery = $($discoveryObj.issuer), ожидалось $expectedIssuer"
+}
+
+# Точка входа и healthcheck (задача local-20261102-03): / отдаёт страницу-
+# указатель с типом text/html (а не скачиваемый octet-stream), /healthz —
+# text/plain. Раньше add_header не применялся к 404, а на /healthz вместе
+# с default_type давал два заголовка Content-Type.
+$rootStatus = 0
+$rootContent = ''
+$rootContentTypes = @()
+try {
+    $rootResp = Invoke-WebRequest -Uri "$baseUrl/" -SkipHttpErrorCheck
+    $rootStatus = [int]$rootResp.StatusCode
+    $rootContent = [string]$rootResp.Content
+    $rootContentTypes = @($rootResp.Headers['Content-Type'])
+} catch {
+    $rootStatus = 0
+}
+if ($rootStatus -eq 200) {
+    Write-Ok 'точка входа: GET / -> 200'
+} else {
+    Write-Fail "точка входа: GET / вернул HTTP $rootStatus (ожидалось 200)"
+}
+if ($rootContentTypes -match 'text/html') {
+    Write-Ok 'точка входа: Content-Type содержит text/html'
+} else {
+    Write-Fail "точка входа: Content-Type = $($rootContentTypes -join '; '), ожидалось text/html"
+}
+if ($rootContent -match 'discovery') {
+    Write-Ok 'точка входа: страница содержит ссылку на discovery'
+} else {
+    Write-Fail 'точка входа: страница не содержит ссылку на discovery'
+}
+
+$healthzStatus = 0
+$healthzContentTypes = @()
+try {
+    $healthzResp = Invoke-WebRequest -Uri "$baseUrl/healthz" -SkipHttpErrorCheck
+    $healthzStatus = [int]$healthzResp.StatusCode
+    $healthzContentTypes = @($healthzResp.Headers['Content-Type'])
+} catch {
+    $healthzStatus = 0
+}
+if ($healthzStatus -eq 200) {
+    Write-Ok '/healthz -> 200'
+} else {
+    Write-Fail "/healthz вернул HTTP $healthzStatus (ожидалось 200)"
+}
+if ($healthzContentTypes -match 'text/plain') {
+    Write-Ok '/healthz: Content-Type содержит text/plain'
+} else {
+    Write-Fail "/healthz: Content-Type = $($healthzContentTypes -join '; '), ожидалось text/plain"
 }
 
 # ---------------------------------------------------------------------------

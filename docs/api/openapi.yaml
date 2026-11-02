@@ -1,0 +1,1683 @@
+openapi: 3.1.0
+info:
+  title: "ИС РЕОН 2.0 — API Keycloak"
+  version: "1.0.0"
+  description: |
+    Интерактивная документация DEV-стенда аутентификации ИС РЕОН.
+    
+    Описаны две группы API:
+
+    1. **OIDC** — эндпоинты realm `reon`: discovery, выдача и обновление
+       токенов, userinfo, JWKS, браузерный вход и logout. Это то, с чем
+       работают приложения-клиенты (веб-админка, сервисы, smoke-проверки).
+    2. **Admin REST API** — подмножество `/admin/realms/...`, которое
+       используется стендом: realm, users, groups, clients, roles.
+       Управление realm идёт от bootstrap-администратора master realm.
+
+    ## Как получить токен для «Try it»
+
+    В правом верхнем углу Scalar нажмите **Authentication** и вставьте
+    access-токен в схему `bearerAuth`. Токен нужен только для `userinfo` и
+    для Admin REST API.
+
+    - **Сервисный токен** (`reon-service`, grant `client_credentials`) —
+      подходит для вызовов от имени сервисного аккаунта; прав на Admin REST
+      API у него нет (ответ 403), а `userinfo` без пользователя тоже отвечает
+      403. Выполните `POST /realms/reon/protocol/openid-connect/token`
+      с примером `client_credentials` и скопируйте `access_token`.
+    - **Пользовательский токен** (grant `password` для `reon-dev-smoke`) —
+      нужен для `userinfo`: у сервисного аккаунта пользовательских claims нет.
+    - **Админский токен** (`admin-cli`, grant `password` от bootstrap-админа) —
+      нужен для `/admin/...`. Выполните
+      `POST /realms/master/protocol/openid-connect/token` с примером
+      `admin-password` и скопируйте `access_token`.
+
+    Все секреты в примерах — **DEV-заглушки** из `.env.example`/README.
+    Замените их значениями своего `.env`, если стенд настроен иначе.
+
+    ## Ограничения стенда
+
+    Всё описанное — только для локального DEV-стенда: http без TLS, ROPC и
+    документация без аутентификации. В продуктовом профиле эти возможности
+    должны быть закрыты.
+  contact:
+    name: "Команда ИС РЕОН 2.0"
+  license:
+    name: "Внутренний проект"
+
+servers:
+  - url: http://localhost:8090
+    description: "Точка входа nginx — основной адрес (issuer, API, документация)."
+  - url: http://localhost:8084
+    description: "Keycloak напрямую — только для отладки; issuer в токенах всё равно указывает на nginx."
+
+tags:
+  - name: OIDC
+    description: |
+      OpenID Connect эндпоинты realm `reon`: discovery, браузерный вход,
+      выдача и обновление токенов, userinfo, публичные ключи и logout.
+      Аутентификация клиентов — `client_secret_basic`/`client_secret_post`
+      для confidential-клиентов; публичные клиенты (SPA) используют
+      Authorization Code + PKCE S256.
+  - name: "Admin: realm"
+    description: |
+      Администрирование realm `reon`: получение админ-токена master realm
+      клиентом `admin-cli` и параметры самого realm.
+  - name: "Admin: users"
+    description: |
+      Пользователи realm `reon`: поиск и карточка, группы пользователя,
+      сброс пароля и realm-роли. В стенде это `dev-*` и `syn-*`.
+  - name: "Admin: groups"
+    description: |
+      Иерархия групп realm: корень `/reon`, ветки `/reon/hq`,
+      `/reon/branch-1`, `/reon/admins` и их потомки. Роли наследуются
+      вниз по дереву.
+  - name: "Admin: clients"
+    description: |
+      OIDC-клиенты realm: публичные SPA и confidential-сервисы стенда.
+  - name: "Admin: roles"
+    description: |
+      Realm-роли и их привязки к пользователям (в стенде роли висят на
+      группах и попадают в токен по наследованию).
+
+paths:
+  # ---------------------------------------------------------------------------
+  # OIDC: discovery и метаданные
+  # ---------------------------------------------------------------------------
+  /realms/reon/.well-known/openid-configuration:
+    get:
+      tags:
+        - OIDC
+      operationId: getOidcDiscovery
+      summary: "Discovery: метаданные OIDC-провайдера"
+      description: |
+        Возвращает документ метаданных realm `reon`: адреса эндпоинтов,
+        поддерживаемые grant types, алгоритмы подписи, методы PKCE и список
+        scopes. Клиенты обязаны брать адреса эндпоинтов отсюда, а не
+        хардкодить их.
+
+        `issuer` в ответе — `http://localhost:8090/realms/reon` (публичный
+        адрес nginx), даже если запрос пришёл на прямой порт 8084.
+      responses:
+        "200":
+          description: "Документ метаданных OIDC."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCConfiguration"
+              example:
+                issuer: "http://localhost:8090/realms/reon"
+                authorization_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/auth"
+                token_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/token"
+                userinfo_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/userinfo"
+                end_session_endpoint: "http://localhost:8090/realms/reon/protocol/openid-connect/logout"
+                jwks_uri: "http://localhost:8090/realms/reon/protocol/openid-connect/certs"
+                grant_types_supported:
+                  - authorization_code
+                  - client_credentials
+                  - refresh_token
+                  - password
+                response_types_supported:
+                  - code
+                code_challenge_methods_supported:
+                  - S256
+                subject_types_supported:
+                  - public
+                id_token_signing_alg_values_supported:
+                  - RS256
+                scopes_supported:
+                  - openid
+                  - profile
+                  - email
+                  - roles
+
+  # ---------------------------------------------------------------------------
+  # OIDC: токены
+  # ---------------------------------------------------------------------------
+  /realms/reon/protocol/openid-connect/token:
+    post:
+      tags:
+        - OIDC
+      operationId: issueToken
+      summary: "Выдача и обновление токенов"
+      description: |
+        Единый эндпоинт выдачи токенов Keycloak. Тип запроса определяется
+        полем `grant_type`; ниже приведены готовые примеры для всех потоков,
+        используемых стендом.
+
+        | grant_type | Клиент | Назначение |
+        |---|---|---|
+        | `client_credentials` | `reon-service` | межсервисные вызовы |
+        | `password` (ROPC) | `reon-dev-smoke` | только smoke-проверки, в продукте запрещён |
+        | `refresh_token` | `reon-admin-web` | продление сессии SPA |
+        | `authorization_code` | `reon-admin-web` | обмен кода на токены (PKCE S256) |
+
+        Формат тела — `application/x-www-form-urlencoded`. Confidential-клиенты
+        передают `client_secret`; для публичного `reon-admin-web` секрет не
+        нужен, но обязателен `code_verifier` из PKCE.
+
+        Access-токен живёт 15 минут (`accessTokenLifespan: 900` в
+        `docker/keycloak/realm.yml`). Отдельного TTL у refresh-токена нет: он
+        действует, пока жива SSO-сессия, которую ограничивают
+        `ssoSessionIdleTimeout` и `ssoSessionMaxLifespan`. В Keycloak по
+        умолчанию это 30 минут простоя (1800 с), но в realm стенда оба
+        значения заданы как 28800 секунд (8 часов), поэтому
+        `refresh_expires_in` в ответе — остаток SSO-сессии (до 8 часов).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - client_id
+              properties:
+                grant_type:
+                  type: string
+                  description: "Тип grant."
+                  enum:
+                    - client_credentials
+                    - password
+                    - refresh_token
+                    - authorization_code
+                client_id:
+                  type: string
+                  description: |
+                    Идентификатор клиента realm `reon`: `reon-service`
+                    (client_credentials), `reon-dev-smoke` (ROPC, только DEV),
+                    `reon-admin-web` (Authorization Code + PKCE).
+                  example: reon-service
+                client_secret:
+                  type: string
+                  description: "Секрет confidential-клиента. Для публичного клиента не передаётся."
+                  format: password
+                username:
+                  type: string
+                  description: "Логин пользователя. Только для grant `password` (ROPC)."
+                password:
+                  type: string
+                  description: "Пароль пользователя. Только для grant `password` (ROPC)."
+                  format: password
+                scope:
+                  type: string
+                  description: "Запрашиваемые scopes через пробел, обычно `openid`."
+                refresh_token:
+                  type: string
+                  description: "Refresh-токен из предыдущего ответа. Только для grant `refresh_token`."
+                code:
+                  type: string
+                  description: "Код авторизации из redirect после `/auth`. Только для grant `authorization_code`."
+                redirect_uri:
+                  type: string
+                  description: "Тот же redirect_uri, что был в запросе `/auth`."
+                  format: uri
+                code_verifier:
+                  type: string
+                  description: "PKCE code_verifier, из которого вычислялся `code_challenge`. Только для `authorization_code`."
+            examples:
+              clientCredentials:
+                summary: "client_credentials — сервисный клиент reon-service"
+                description: |
+                  Межсервисные вызовы. Токен принадлежит service account
+                  `service-account-reon-service`, `aud` содержит `reon-api`.
+                value:
+                  grant_type: client_credentials
+                  client_id: reon-service
+                  client_secret: dev-reon-service-secret-change-me
+              password:
+                summary: "password (ROPC) — dev-пользователь, только DEV"
+                description: |
+                  **Только для DEV-стенда.** ROPC отдаёт токен по логину и
+                  паролю без браузера; в продукте этот grant запрещён.
+                  Клиент `reon-dev-smoke` существует исключительно для
+                  smoke-проверок. Пароль dev-пользователя — `<username>-pass`.
+                value:
+                  grant_type: password
+                  client_id: reon-dev-smoke
+                  client_secret: dev-reon-dev-smoke-secret-change-me
+                  username: dev-branch
+                  password: dev-branch-pass
+                  scope: openid
+              refreshToken:
+                summary: "refresh_token — продление сессии SPA"
+                description: |
+                  Публичный клиент `reon-admin-web`: секрет не нужен,
+                  достаточно refresh-токена из предыдущего ответа.
+                value:
+                  grant_type: refresh_token
+                  client_id: reon-admin-web
+                  refresh_token: "<refresh_token из ответа token-эндпоинта>"
+              authorizationCodePkce:
+                summary: "authorization_code + PKCE S256 — reon-admin-web"
+                description: |
+                  Обмен кода, полученного после браузерного входа через
+                  `/realms/reon/protocol/openid-connect/auth`. `code_verifier` —
+                  исходная строка, из которой был посчитан `code_challenge`.
+                  `redirect_uri` должен совпадать с указанным в `/auth`.
+                value:
+                  grant_type: authorization_code
+                  client_id: reon-admin-web
+                  code: "<code из query-параметра redirect_uri>"
+                  redirect_uri: "http://localhost:4200/"
+                  code_verifier: "test-verifier"
+      responses:
+        "200":
+          description: "Токены выданы."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+              example:
+                access_token: "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZXYta2V5In0.eyJleHAiOjE3OTM2MjQwMDAsImlhdCI6MTc5MzYyMzEwMCwiYXVkIjoicmVvbi1hcGkiLCJhenAiOiJyZW9uLXNlcnZpY2UifQ.signature"
+                expires_in: 900
+                refresh_expires_in: 28800
+                refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZXYtcmVmIn0.eyJleHAiOjE3OTM2NTE5MDAsInR5cCI6IlJlZnJlc2gifQ.signature"
+                token_type: Bearer
+                scope: "openid profile email roles"
+        "400":
+          description: |
+            Некорректный запрос: неизвестный `grant_type`, неверный
+            `code_verifier`, истёкший код или refresh-токен.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRepresentation"
+              example:
+                error: invalid_grant
+                error_description: "Code not valid"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # OIDC: userinfo, JWKS
+  # ---------------------------------------------------------------------------
+  /realms/reon/protocol/openid-connect/userinfo:
+    get:
+      tags:
+        - OIDC
+      operationId: getUserInfo
+      summary: "UserInfo: claims аутентифицированного пользователя"
+      description: |
+        Возвращает claims по access-токену пользователя. Помимо стандартных
+        полей стенд добавляет `groups` (полные пути групп) и `org_id`
+        (UUID организации).
+
+        Токен **сервисного аккаунта** (grant `client_credentials`) здесь
+        отвечает **403**: у service account нет пользователя, а значит и
+        пользовательских claims. Для проверки используйте токен
+        dev-пользователя (например, `dev-branch` через `reon-dev-smoke`).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Claims пользователя."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sub:
+                    type: string
+                    description: "UUID пользователя."
+                  preferred_username:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  email_verified:
+                    type: boolean
+                  name:
+                    type: string
+                  groups:
+                    type: array
+                    description: "Полные пути групп realm."
+                    items:
+                      type: string
+                  org_id:
+                    type: string
+                    description: "UUID организации (атрибут пользователя)."
+              example:
+                sub: "6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e"
+                preferred_username: dev-branch
+                email: dev-branch@example.invalid
+                email_verified: false
+                name: "Филиал 1 (DEV)"
+                groups:
+                  - "/reon/branch-1"
+                org_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /realms/reon/protocol/openid-connect/certs:
+    get:
+      tags:
+        - OIDC
+      operationId: getJwks
+      summary: "JWKS: публичные ключи подписи realm"
+      description: |
+        Набор публичных ключей (JSON Web Key Set) для проверки подписи
+        access- и ID-токенов. Ключи общие для всего realm; клиенты кешируют
+        их по `kid` из заголовка JWT.
+      responses:
+        "200":
+          description: "Публичные ключи realm."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kid:
+                          type: string
+                        kty:
+                          type: string
+                        alg:
+                          type: string
+                        use:
+                          type: string
+                        n:
+                          type: string
+                        e:
+                          type: string
+              example:
+                keys:
+                  - kid: "dev-key-1"
+                    kty: RSA
+                    alg: RS256
+                    use: sig
+                    n: "sXch0o1...обрезано"
+                    e: AQAB
+
+  # ---------------------------------------------------------------------------
+  # OIDC: браузерный вход и logout
+  # ---------------------------------------------------------------------------
+  /realms/reon/protocol/openid-connect/auth:
+    get:
+      tags:
+        - OIDC
+      operationId: authorize
+      summary: "Authorization Code + PKCE: браузерный вход"
+      description: |
+        Начало браузерного входа. В браузере Keycloak отвечает **302** на
+        форму входа, после успешной аутентификации — **302** на
+        `redirect_uri` с параметром `code`.
+
+        **«Try it» из Scalar для этого эндпоинта не показателен:** запрос
+        нужно открывать в браузере, а не отправлять XHR/fetch. Для отладки
+        скопируйте URL в новую вкладку или используйте `curl -i`.
+
+        Для SPA `reon-admin-web` обязателен PKCE S256: приложение генерирует
+        `code_verifier`, отправляет `code_challenge = base64url(sha256(verifier))`,
+        а затем передаёт `code_verifier` в token-эндпоинт. Redirect URIs
+        стенда — `http://localhost:4200/*` и `http://localhost:4201/*`.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          description: "Идентификатор клиента."
+          schema:
+            type: string
+            default: reon-admin-web
+        - name: redirect_uri
+          in: query
+          required: true
+          description: "Адрес возврата. Должен совпадать с разрешённым у клиента."
+          schema:
+            type: string
+            format: uri
+            default: "http://localhost:4200/"
+        - name: response_type
+          in: query
+          required: true
+          description: "Только `code`: стенд использует Authorization Code."
+          schema:
+            type: string
+            enum:
+              - code
+            default: code
+        - name: scope
+          in: query
+          description: "Запрашиваемые scopes через пробел."
+          schema:
+            type: string
+            default: "openid profile email roles"
+        - name: code_challenge
+          in: query
+          required: true
+          description: "PKCE: base64url(sha256(code_verifier))."
+          schema:
+            type: string
+            default: "JBbiqONGWPaAmwXk_8bT6UnlPfrn65D32eZlJS-zGG0"
+        - name: code_challenge_method
+          in: query
+          required: true
+          description: "Метод PKCE. У `reon-admin-web` разрешён только S256."
+          schema:
+            type: string
+            enum:
+              - S256
+            default: S256
+        - name: state
+          in: query
+          description: "Непрозрачное значение для защиты от CSRF; возвращается в redirect."
+          schema:
+            type: string
+      responses:
+        "302":
+          description: "Редирект на форму входа или на `redirect_uri` с кодом."
+          headers:
+            Location:
+              description: "Форма входа Keycloak либо `redirect_uri?code=...&state=...`."
+              schema:
+                type: string
+        "200":
+          description: "HTML формы входа (когда Keycloak отвечает страницей, а не редиректом)."
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: "Некорректные параметры запроса (например, неизвестный `client_id`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRepresentation"
+
+  /realms/reon/protocol/openid-connect/logout:
+    post:
+      tags:
+        - OIDC
+      operationId: logout
+      summary: "Logout: завершение сессии"
+      description: |
+        Завершает сессию Keycloak. Для SPA передайте `refresh_token`
+        (и/или `id_token_hint`), чтобы завершить именно свою сессию;
+        `post_logout_redirect_uri` должен быть разрешён у клиента
+        (`http://localhost:4200/*` для `reon-admin-web`).
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                  description: "Идентификатор клиента, чью сессию завершаем."
+                refresh_token:
+                  type: string
+                  description: "Refresh-токен сессии."
+                id_token_hint:
+                  type: string
+                  description: "ID-токен сессии (альтернатива refresh_token)."
+                post_logout_redirect_uri:
+                  type: string
+                  format: uri
+                  description: "Куда вернуть браузер после выхода."
+            examples:
+              spaLogout:
+                summary: "Выход SPA reon-admin-web"
+                value:
+                  client_id: reon-admin-web
+                  refresh_token: "<refresh_token сессии>"
+                  post_logout_redirect_uri: "http://localhost:4200/"
+      responses:
+        "204":
+          description: "Сессия завершена, тело ответа пустое."
+        "400":
+          description: "Некорректный запрос (например, неизвестный клиент или redirect URI)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRepresentation"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: токен администратора
+  # ---------------------------------------------------------------------------
+  /realms/master/protocol/openid-connect/token:
+    post:
+      tags:
+        - "Admin: realm"
+      operationId: issueAdminToken
+      summary: "Админский токен master realm (admin-cli)"
+      description: |
+        Токен для Admin REST API выдаётся в **master** realm клиентом
+        `admin-cli` (public client, grant `password`). Логин и пароль —
+        bootstrap-администратор Keycloak; на стенде значения по умолчанию
+        берутся из `.env` (`admin` / `dev-admin-change-me`, см.
+        `.env.example`). Если `.env` изменён, подставьте свои значения.
+
+        Полученный `access_token` передавайте в заголовке
+        `Authorization: Bearer <token>` — в Scalar через кнопку
+        **Authentication** (схема `bearerAuth`).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - client_id
+                - username
+                - password
+              properties:
+                grant_type:
+                  type: string
+                  enum:
+                    - password
+                client_id:
+                  type: string
+                  enum:
+                    - admin-cli
+                username:
+                  type: string
+                  description: "Логин bootstrap-администратора (по умолчанию `admin`)."
+                password:
+                  type: string
+                  description: "Пароль bootstrap-администратора (DEV-заглушка `dev-admin-change-me`)."
+                  format: password
+            examples:
+              adminPassword:
+                summary: "password — bootstrap-администратор master realm"
+                value:
+                  grant_type: password
+                  client_id: admin-cli
+                  username: admin
+                  password: dev-admin-change-me
+      responses:
+        "200":
+          description: "Токен администратора выдан."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+              example:
+                access_token: "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZXYta2V5In0.eyJleHAiOjE3OTM2MjQwMDAsInR5cCI6IkJlYXJlciIsImF6cCI6ImFkbWluLWNsaSJ9.signature"
+                expires_in: 900
+                refresh_expires_in: 1800
+                refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZXYtcmVmIn0.eyJ0eXAiOiJSZWZyZXNoIn0.signature"
+                token_type: Bearer
+                scope: "openid profile email"
+        "400":
+          description: "Некорректный grant или отсутствуют обязательные поля."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRepresentation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: realm
+  # ---------------------------------------------------------------------------
+  /admin/realms/reon:
+    get:
+      tags:
+        - "Admin: realm"
+      operationId: getRealm
+      summary: "Realm reon: параметры"
+      description: |
+        Возвращает представление realm `reon`: включён ли он, отображаемое
+        имя, требования к TLS, время жизни токенов. Удобная проверка, что
+        админский токен валиден и realm доступен.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Параметры realm."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealmRepresentation"
+              example:
+                id: reon
+                realm: reon
+                displayName: "ИС РЕОН 2.0 (DEV)"
+                enabled: true
+                sslRequired: none
+                registrationAllowed: false
+                loginWithEmailAllowed: true
+                accessTokenLifespan: 900
+                ssoSessionMaxLifespan: 28800
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: users
+  # ---------------------------------------------------------------------------
+  /admin/realms/reon/users:
+    get:
+      tags:
+        - "Admin: users"
+      operationId: listUsers
+      summary: "Пользователи realm: поиск и постраничный список"
+      description: |
+        Список пользователей realm `reon`. В стенде это dev-пользователи
+        (`dev-admin`, `dev-branch`, `dev-finance`) и синтетические
+        (`syn-*`). Поиск `search` ищет подстроку в username, имени и фамилии.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          description: "Подстрока для поиска по username, first name, last name или email."
+          schema:
+            type: string
+          examples:
+            synthetics:
+              summary: "Все синтетические пользователи"
+              value: syn-
+        - name: first
+          in: query
+          description: "Смещение от начала выборки."
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: max
+          in: query
+          description: "Максимальный размер страницы."
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: "Список пользователей."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserRepresentation"
+              example:
+                - id: "6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e"
+                  username: syn-mdm-editor
+                  enabled: true
+                  emailVerified: false
+                  firstName: "Редактор"
+                  lastName: "МДМ"
+                  email: syn-mdm-editor@example.invalid
+                  createdTimestamp: 1793600000000
+                - id: "7a2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d"
+                  username: syn-branch-employee-1
+                  enabled: true
+                  emailVerified: false
+                  firstName: "Сотрудник"
+                  lastName: "Филиала"
+                  email: syn-branch-employee-1@example.invalid
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/realms/reon/users/{user-id}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags:
+        - "Admin: users"
+      operationId: getUser
+      summary: "Пользователь по ID"
+      description: "Полное представление пользователя, включая атрибуты и группы."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Пользователь."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRepresentation"
+              example:
+                id: "6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e"
+                username: dev-admin
+                enabled: true
+                emailVerified: false
+                firstName: "Администратор"
+                lastName: "DEV"
+                email: dev-admin@example.invalid
+                attributes:
+                  org_id:
+                    - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                groups:
+                  - /reon/hq
+                  - /reon/admins
+                realmRoles:
+                  - MASTER_ADMIN
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - "Admin: users"
+      operationId: updateUser
+      summary: "Обновить пользователя"
+      description: |
+        Обновляет переданные поля пользователя; отсутствующие в теле поля
+        не меняются. Для атрибутов `org_id` значение — массив строк.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRepresentation"
+            example:
+              firstName: "Сотрудник"
+              lastName: "Филиала"
+              email: syn-branch-employee-1@example.invalid
+              enabled: true
+      responses:
+        "204":
+          description: "Пользователь обновлён."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags:
+        - "Admin: users"
+      operationId: deleteUser
+      summary: "Удалить пользователя"
+      description: |
+        **Осторожно:** удаление необратимо; на DEV-стенде пользователи
+        восстанавливаются повторным запуском
+        `docker compose run --rm reon-auth-keycloak-init` и
+        `reon-auth-synthetic-init`.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: "Пользователь удалён."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/realms/reon/users/{user-id}/groups:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags:
+        - "Admin: users"
+      operationId: getUserGroups
+      summary: "Группы пользователя"
+      description: |
+        Группы, в которых пользователь состоит напрямую. Роли наследуются от
+        групп, поэтому этот список объясняет состав `realm_access.roles`
+        в токене.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Группы пользователя."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroupRepresentation"
+              example:
+                - id: "0f0e0d0c-0b0a-4908-8706-050403020100"
+                  name: hq
+                  path: /reon/hq
+                  parentId: "9f9e9d9c-9b9a-4989-8786-858483828180"
+                  subGroupCount: 1
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/realms/reon/users/{user-id}/reset-password:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags:
+        - "Admin: users"
+      operationId: resetUserPassword
+      summary: "Сбросить пароль пользователя"
+      description: |
+        Устанавливает новый пароль. `temporary: true` заставит Keycloak
+        потребовать смену пароля при следующем входе (для dev-пользователей
+        стенда удобнее `false`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialRepresentation"
+            example:
+              type: password
+              value: "new-dev-password"
+              temporary: false
+      responses:
+        "204":
+          description: "Пароль изменён."
+        "400":
+          description: "Некорректное представление пароля."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRepresentation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/realms/reon/users/{user-id}/role-mappings/realm:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags:
+        - "Admin: roles"
+      operationId: getUserRealmRoleMappings
+      summary: "Realm-роли пользователя"
+      description: |
+        Эффективные realm-роли пользователя, включая унаследованные от групп.
+        В токене они видны как `realm_access.roles`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Realm-роли пользователя."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleRepresentation"
+              example:
+                - id: "5c4b3a29-1807-46f5-84e3-d2c1b0a99887"
+                  name: report:read
+                  description: "Чтение отчётов"
+                  composite: false
+                  clientRole: false
+                  containerId: reon
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: groups
+  # ---------------------------------------------------------------------------
+  /admin/realms/reon/groups:
+    get:
+      tags:
+        - "Admin: groups"
+      operationId: listGroups
+      summary: "Корневые группы realm (дерево)"
+      description: |
+        Возвращает иерархию групп верхнего уровня с вложенными `subGroups`.
+        В стенде корень — `reon`, внутри `/reon/hq`, `/reon/branch-1`,
+        `/reon/admins`; роли привязаны к группам и наследуются вниз.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: briefRepresentation
+          in: query
+          description: "Только ключевые поля (без атрибутов и ролей)."
+          schema:
+            type: boolean
+            default: true
+        - name: first
+          in: query
+          description: "Смещение от начала выборки."
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: max
+          in: query
+          description: "Максимальный размер страницы."
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+      responses:
+        "200":
+          description: "Группы верхнего уровня."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroupRepresentation"
+              example:
+                - id: "9f9e9d9c-9b9a-4989-8786-858483828180"
+                  name: reon
+                  path: /reon
+                  subGroupCount: 3
+                  subGroups:
+                    - id: "0f0e0d0c-0b0a-4908-8706-050403020100"
+                      name: hq
+                      path: /reon/hq
+                      parentId: "9f9e9d9c-9b9a-4989-8786-858483828180"
+                    - id: "1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9"
+                      name: branch-1
+                      path: /reon/branch-1
+                      parentId: "9f9e9d9c-9b9a-4989-8786-858483828180"
+                    - id: "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f90a"
+                      name: admins
+                      path: /reon/admins
+                      parentId: "9f9e9d9c-9b9a-4989-8786-858483828180"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/realms/reon/groups/{group-id}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags:
+        - "Admin: groups"
+      operationId: getGroup
+      summary: "Группа по ID"
+      description: "Полное представление группы: путь, родитель, атрибуты, роли."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Группа."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupRepresentation"
+              example:
+                id: "0f0e0d0c-0b0a-4908-8706-050403020100"
+                name: finance
+                path: /reon/hq/finance
+                parentId: "3c4d5e6f-7081-4293-a4b5-c6d7e8f90a1b"
+                subGroupCount: 0
+                attributes:
+                  org_id:
+                    - "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                realmRoles:
+                  - report:read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/realms/reon/groups/{group-id}/children:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags:
+        - "Admin: groups"
+      operationId: getGroupChildren
+      summary: "Дочерние группы"
+      description: |
+        Прямые потомки группы. Для `/reon` вернёт `hq`, `branch-1`,
+        `admins`; для `/reon/hq` — `finance`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: briefRepresentation
+          in: query
+          description: "Только ключевые поля."
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: "Дочерние группы."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroupRepresentation"
+              example:
+                - id: "0f0e0d0c-0b0a-4908-8706-050403020100"
+                  name: hq
+                  path: /reon/hq
+                  parentId: "9f9e9d9c-9b9a-4989-8786-858483828180"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/realms/reon/groups/{group-id}/members:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags:
+        - "Admin: groups"
+      operationId: getGroupMembers
+      summary: "Участники группы"
+      description: |
+        Пользователи, состоящие в группе напрямую. Наследование вниз по
+        дереву здесь не разворачивается: для состава `/reon` смотрите
+        группы по отдельности.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: first
+          in: query
+          description: "Смещение от начала выборки."
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: max
+          in: query
+          description: "Максимальный размер страницы."
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+      responses:
+        "200":
+          description: "Участники группы."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserRepresentation"
+              example:
+                - id: "6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e"
+                  username: syn-mdm-editor
+                  enabled: true
+                  email: syn-mdm-editor@example.invalid
+                - id: "8b3c4d5e-6f70-4182-93a4-b5c6d7e8f901"
+                  username: dev-finance
+                  enabled: true
+                  email: dev-finance@example.invalid
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: clients
+  # ---------------------------------------------------------------------------
+  /admin/realms/reon/clients:
+    get:
+      tags:
+        - "Admin: clients"
+      operationId: listClients
+      summary: "OIDC-клиенты realm"
+      description: |
+        Клиенты realm с настройками потоков. Фильтр `clientId` ищет по
+        человекочитаемому идентификатору (`reon-service`,
+        `reon-admin-web`, ...), а не по внутреннему UUID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: clientId
+          in: query
+          description: "Точное совпадение по `clientId`."
+          schema:
+            type: string
+          examples:
+            service:
+              summary: "Сервисный клиент"
+              value: reon-service
+            spa:
+              summary: "SPA-клиент"
+              value: reon-admin-web
+        - name: first
+          in: query
+          description: "Смещение от начала выборки."
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: max
+          in: query
+          description: "Максимальный размер страницы."
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+      responses:
+        "200":
+          description: "Список клиентов."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClientRepresentation"
+              example:
+                - id: "c0a1b2c3-d4e5-46f7-8899-aabbccddeeff"
+                  clientId: reon-admin-web
+                  name: "РЕОН 2.0 — админ-панель (SPA, DEV)"
+                  enabled: true
+                  protocol: openid-connect
+                  publicClient: true
+                  standardFlowEnabled: true
+                  directAccessGrantsEnabled: false
+                  serviceAccountsEnabled: false
+                  rootUrl: "http://localhost:4200"
+                  redirectUris:
+                    - "http://localhost:4200/*"
+                    - "http://localhost:4201/*"
+                  webOrigins:
+                    - "http://localhost:4200"
+                    - "http://localhost:4201"
+                  attributes:
+                    pkce.code.challenge.method: S256
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/realms/reon/clients/{client-uuid}:
+    parameters:
+      - $ref: "#/components/parameters/ClientUuid"
+    get:
+      tags:
+        - "Admin: clients"
+      operationId: getClient
+      summary: "Клиент по внутреннему UUID"
+      description: |
+        Полное представление клиента. Обратите внимание: в пути — внутренний
+        UUID (`id`), а не `clientId`. Найти UUID по `clientId` можно через
+        `GET /admin/realms/reon/clients?clientId=...`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Клиент."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientRepresentation"
+              example:
+                id: "d1e2f3a4-b5c6-47d8-9e0f-a1b2c3d4e5f6"
+                clientId: reon-service
+                name: "РЕОН 2.0 — сервисный клиент (DEV)"
+                description: "Межсервисные вызовы, client_credentials"
+                enabled: true
+                protocol: openid-connect
+                publicClient: false
+                standardFlowEnabled: false
+                directAccessGrantsEnabled: false
+                serviceAccountsEnabled: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Admin REST API: roles
+  # ---------------------------------------------------------------------------
+  /admin/realms/reon/roles:
+    get:
+      tags:
+        - "Admin: roles"
+      operationId: listRealmRoles
+      summary: "Realm-роли"
+      description: |
+        Все роли уровня realm. В стенде роли (`MASTER_ADMIN`, `mdm:read`,
+        `mdm:write`, `report:read`, `s3:write`, ...) привязаны к группам и
+        попадают в токен через наследование групп.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          description: "Подстрока в имени роли."
+          schema:
+            type: string
+          examples:
+            mdm:
+              summary: "Роли мастер-данных"
+              value: mdm
+        - name: first
+          in: query
+          description: "Смещение от начала выборки."
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: max
+          in: query
+          description: "Максимальный размер страницы."
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+      responses:
+        "200":
+          description: "Realm-роли."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleRepresentation"
+              example:
+                - id: "4b3a2918-0706-45f4-83e2-d1c0b0a99876"
+                  name: MASTER_ADMIN
+                  description: "Мастер-администратор ИС РЕОН"
+                  composite: false
+                  clientRole: false
+                  containerId: reon
+                - id: "5c4b3a29-1807-46f5-84e3-d2c1b0a99887"
+                  name: report:read
+                  description: "Чтение отчётов"
+                  composite: false
+                  clientRole: false
+                  containerId: reon
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access-токен Keycloak в заголовке `Authorization: Bearer <token>`.
+
+        - Для **Admin REST API** (`/admin/...`) нужен токен master realm,
+          полученный на `POST /realms/master/protocol/openid-connect/token`
+          клиентом `admin-cli` (grant `password`, bootstrap-администратор).
+          Токен сервисного аккаунта `reon-service` прав администратора не
+          имеет и получает 403.
+        - Для **userinfo** нужен токен пользователя realm `reon` — например,
+          полученный через `reon-dev-smoke` (grant `password`) на
+          `POST /realms/reon/protocol/openid-connect/token`.
+
+        В Scalar нажмите **Authentication** и вставьте токен в это поле.
+
+  parameters:
+    UserId:
+      name: user-id
+      in: path
+      required: true
+      description: "Внутренний UUID пользователя (поле `id`, не `username`)."
+      schema:
+        type: string
+        format: uuid
+      examples:
+        devAdmin:
+          summary: "dev-admin"
+          value: "6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e"
+    GroupId:
+      name: group-id
+      in: path
+      required: true
+      description: "UUID группы (поле `id`)."
+      schema:
+        type: string
+        format: uuid
+      examples:
+        hq:
+          summary: "/reon/hq"
+          value: "0f0e0d0c-0b0a-4908-8706-050403020100"
+    ClientUuid:
+      name: client-uuid
+      in: path
+      required: true
+      description: "Внутренний UUID клиента (поле `id`), не `clientId`."
+      schema:
+        type: string
+        format: uuid
+      examples:
+        reonService:
+          summary: "reon-service"
+          value: "d1e2f3a4-b5c6-47d8-9e0f-a1b2c3d4e5f6"
+
+  responses:
+    Unauthorized:
+      description: "Токен отсутствует, истёк или подписан не тем ключом."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRepresentation"
+          example:
+            error: "HTTP 401 Unauthorized"
+    Forbidden:
+      description: "Токен валиден, но у пользователя нет нужной роли."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRepresentation"
+          example:
+            error: "HTTP 403 Forbidden"
+    NotFound:
+      description: "Объект не найден."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRepresentation"
+          example:
+            error: "HTTP 404 Not Found"
+
+  schemas:
+    ErrorRepresentation:
+      type: object
+      description: "Ошибка OIDC (`error`/`error_description`) или Admin REST API (`error` с HTTP-кодом)."
+      properties:
+        error:
+          type: string
+          description: "Код ошибки: `invalid_grant`, `invalid_client`, `HTTP 401 Unauthorized`, ..."
+        error_description:
+          type: string
+          description: "Человекочитаемое пояснение (у OIDC-ошибок)."
+
+    TokenResponse:
+      type: object
+      description: "Ответ token-эндпоинта Keycloak."
+      properties:
+        access_token:
+          type: string
+          description: "JWT access-токен (RS256). Живёт 15 минут на стенде."
+        expires_in:
+          type: integer
+          description: "Время жизни access-токена в секундах (900)."
+        refresh_expires_in:
+          type: integer
+          description: |
+            Остаток SSO-сессии в секундах, в течение которого refresh-токен
+            можно использовать. На стенде `ssoSessionIdleTimeout` и
+            `ssoSessionMaxLifespan` равны 28800 (8 ч); в Keycloak по
+            умолчанию SSO idle — 1800 (30 мин).
+        refresh_token:
+          type: string
+          description: "Refresh-токен. Для `client_credentials` может отсутствовать."
+        token_type:
+          type: string
+          description: "Тип токена, всегда `Bearer`."
+        scope:
+          type: string
+          description: "Выданные scopes через пробел."
+        id_token:
+          type: string
+          description: "OIDC ID-токен; присутствует при scope `openid` и потоках с аутентификацией пользователя."
+        session_state:
+          type: string
+          description: "Идентификатор сессии Keycloak (для потоков с браузером)."
+
+    OIDCConfiguration:
+      type: object
+      description: "Документ discovery OIDC (подмножество полей)."
+      properties:
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        userinfo_endpoint:
+          type: string
+          format: uri
+        end_session_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        introspection_endpoint:
+          type: string
+          format: uri
+        revocation_endpoint:
+          type: string
+          format: uri
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+        response_types_supported:
+          type: array
+          items:
+            type: string
+        code_challenge_methods_supported:
+          type: array
+          items:
+            type: string
+        subject_types_supported:
+          type: array
+          items:
+            type: string
+        id_token_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+        scopes_supported:
+          type: array
+          items:
+            type: string
+
+    RealmRepresentation:
+      type: object
+      description: "Параметры realm (подмножество полей)."
+      properties:
+        id:
+          type: string
+        realm:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+        sslRequired:
+          type: string
+          description: "`none` на DEV-стенде."
+        registrationAllowed:
+          type: boolean
+        loginWithEmailAllowed:
+          type: boolean
+        accessTokenLifespan:
+          type: integer
+          description: "Время жизни access-токена в секундах."
+        ssoSessionMaxLifespan:
+          type: integer
+          description: "Максимальная длительность SSO-сессии в секундах."
+
+    UserRepresentation:
+      type: object
+      description: "Пользователь realm (ключевые поля)."
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        enabled:
+          type: boolean
+        emailVerified:
+          type: boolean
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        createdTimestamp:
+          type: integer
+          description: "Время создания, миллисекунды epoch."
+        attributes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: "Атрибуты пользователя; на стенде здесь `org_id`."
+        groups:
+          type: array
+          description: "Полные пути групп."
+          items:
+            type: string
+        realmRoles:
+          type: array
+          description: "Эффективные realm-роли."
+          items:
+            type: string
+
+    GroupRepresentation:
+      type: object
+      description: "Группа realm: путь, родитель, вложенные группы и роли."
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        path:
+          type: string
+          description: "Полный путь группы, например `/reon/hq/finance`."
+        parentId:
+          type: string
+          format: uuid
+        subGroupCount:
+          type: integer
+        subGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupRepresentation"
+        attributes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        realmRoles:
+          type: array
+          items:
+            type: string
+        clientRoles:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ClientRepresentation:
+      type: object
+      description: "OIDC-клиент realm (ключевые поля)."
+      properties:
+        id:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        protocol:
+          type: string
+          description: "`openid-connect`."
+        publicClient:
+          type: boolean
+        standardFlowEnabled:
+          type: boolean
+        directAccessGrantsEnabled:
+          type: boolean
+        serviceAccountsEnabled:
+          type: boolean
+        rootUrl:
+          type: string
+          format: uri
+        redirectUris:
+          type: array
+          items:
+            type: string
+            format: uri
+        webOrigins:
+          type: array
+          items:
+            type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+
+    RoleRepresentation:
+      type: object
+      description: "Realm-роль (ключевые поля)."
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        composite:
+          type: boolean
+        clientRole:
+          type: boolean
+        containerId:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    CredentialRepresentation:
+      type: object
+      description: "Представление пароля для сброса."
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          description: "Только `password`."
+          enum:
+            - password
+        value:
+          type: string
+          description: "Новый пароль."
+          format: password
+        temporary:
+          type: boolean
+          description: "Требовать смену пароля при следующем входе."
+          default: false
