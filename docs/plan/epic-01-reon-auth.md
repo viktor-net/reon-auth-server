@@ -3,7 +3,7 @@
 - Владелец: orchestrator/scribe `ses_e698f600cffeRs4u6jkQsJBWxL`
 - Создан: 2026-11-01
 - Статус: в работе (задачи 01-03 закрыты; следующая — 04)
-- Описание задач: `docs/plan/tasks.md`
+- Описание задач и дорожная карта: `docs/plan/README.md`
 - Доска: `.agents/tasks/local-20261101-NN/`
 
 ## Цель эпика
