@@ -65,11 +65,21 @@
 | `db` | Миграции и схема Postgres |
 | `docker` | `Dockerfile`, `docker-compose*.yml`, `docker/` |
 | `tests` | `tests/**` |
-| `docs` | `README.md`, `CONTRIBUTIONS.md` |
-| `config` | `appsettings*.json`, `global.json`, `.editorconfig` |
+| `adr` | `docs/adr/**` — архитектурные решения |
+| `standards` | `docs/standards/**` — стандарты подключения |
+| `plan` | `docs/plan/**` — эпики, дорожная карта, описания задач |
+| `readme` | `README.md` |
+| `contributions` | `CONTRIBUTIONS.md` |
+| `repo` | `.gitignore`, `.gitattributes`, `.editorconfig` |
+| `config` | `appsettings*.json`, `.env.example` |
+
+Область отвечает на вопрос «о чём это», тип — на вопрос «что сделано». Они не
+должны совпадать: `docs(docs)`, `test(tests)`, `build(build)`, `config(config)`
+запрещены. Если подходящей области нет, её лучше опустить, чем дублировать
+тип.
 
 Если изменения затрагивают несколько областей — лучше разбить на несколько
-коммитов. Если без области совсем не обойтись, её можно опустить.
+коммитов.
 
 ## Пример правильного коммита
 
@@ -87,6 +97,17 @@
 
 Проверено через Scalar UI и unit-тесты.
 ```
+
+## Примеры по областям
+
+| Что менялось | Сообщение |
+|---|---|
+| ADR | `[REON-123] docs(adr): добавить решение о выборе архитектуры` |
+| стандарт подключения | `[REON-123] docs(standards): описать контракт claims` |
+| дорожная карта | `[REON-123] docs(plan): обновить статусы задач` |
+| README | `[REON-123] docs(readme): описать синтетические данные` |
+| правила репозитория | `[REON-123] chore(repo): добавить исключения Git` |
+| решение и сборка | `[REON-123] build(solution): добавить каркас решения` |
 
 ## Правила
 
