@@ -264,6 +264,7 @@ Keycloak остаётся.
 ## Структура репозитория
 
 ```
+CHANGELOG.md                история изменений стенда и документации API
 docker-compose.yml          DEV-стенд: Keycloak, nginx, Postgres, init, Scalar
 docker/keycloak/            realm и dev-данные как код (keycloak-config-cli)
 docker/nginx/               конфигурация reverse proxy и страница-указатель (index.html)
