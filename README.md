@@ -34,7 +34,7 @@ Keycloak, просто роли у них разные.
 |---|---|---|
 | `http://localhost:10009/admin/` — консоль Keycloak (master realm); форму входа перекинет на 10010 | только bootstrap-администратор `admin` | из `.env`, по умолчанию `dev-admin-change-me` |
 | `http://localhost:10010/realms/reon/account/` — консоль аккаунта realm `reon` | пользователи realm `reon`: `dev-admin`, `dev-finance`, `dev-branch`, все `syn-*` | `<username>-pass` |
-| `/docs/` → «Try it» для Admin REST API | токен `admin-cli` (пример `admin-password` в спецификации) | `admin` / `dev-admin-change-me` |
+| `/docs/` → «Try it» для Admin REST API | токен `admin-cli` (пример `adminPassword` в спецификации) | `admin` / `dev-admin-change-me` |
 | Поток `reon-admin-web` / `reon-admin-panel` (Angular) | пользователи realm `reon` | `<username>-pass` |
 
 Важно: `syn-admin` и другие `dev-*`/`syn-*` в консоль Keycloak (10009) **не
@@ -277,10 +277,15 @@ docs/plan/                  эпики, дорожные карты, описа�
 
 ## Документация API (Scalar)
 
-Интерактивная документация двух групп API Keycloak — OIDC-эндпоинтов realm
-`reon` (discovery, токены, userinfo, JWKS, logout) и используемого стендом
-подмножества Admin REST API (realm, users, groups, clients, roles) — доступна
-по адресу `http://localhost:10010/docs/`. Источник истины —
+Интерактивная документация двух групп API Keycloak — OIDC-эндпоинтов
+(discovery, выдача, интроспекция и отзыв токенов, userinfo, JWKS, браузерный
+вход и logout) и используемого стендом подмножества Admin REST API (realm,
+users, groups, clients, roles, включая мутации для воркера синхронизации
+орг-структуры) — доступна по адресу `http://localhost:10010/docs/`. Пути
+приведены в оригинальном виде API Keycloak 26.5 с параметром `{realm}`: на
+стенде рабочий realm — `reon`, служебный realm админ-токена — `master`;
+примеры параметра подставлены, поэтому «Try it» работает без подготовки.
+Источник истины —
 `docs/api/openapi.yaml`; контейнер `reon-auth-scalar` (образ
 `scalarapi/api-reference`, том `./docs/api` только для чтения) монтирует
 спецификацию и публикуется через nginx на том же origin, что и API, поэтому
@@ -291,9 +296,9 @@ docs/plan/                  эпики, дорожные карты, описа�
 Группы (теги) в документации плоские, каждая содержит только эндпоинты:
 `OIDC`, `Admin: realm`, `Admin: users`, `Admin: groups`, `Admin: clients`,
 `Admin: roles`. Как получить токен для «Try it» — в описании спецификации:
-для `/admin/...` нужен токен `admin-cli` из master realm (сервисный токен
-`reon-service` не подходит: у service account нет ролей `realm-management`,
-ответ 403).
+для `/admin/...` нужен токен `admin-cli` из master realm (пример
+`adminPassword` на общем token-эндпоинте; сервисный токен `reon-service` не
+подходит: у service account нет ролей `realm-management`, ответ 403).
 
 ## Известные ограничения DEV-стенда
 
