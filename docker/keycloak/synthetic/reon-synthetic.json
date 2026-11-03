@@ -39,6 +39,40 @@
       ]
     },
     {
+      "clientId": "reon-sandbox-client",
+      "name": "РЕОН 2.0 — sandbox-клиент (Angular, DEV)",
+      "description": "Public SPA для демо входа: authorization code + PKCE S256, redirect 4200 (dev-only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "rootUrl": "http://localhost:4200",
+      "redirectUris": [
+        "http://localhost:4200/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/*"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "acr",
+        "basic",
+        "reon-claims",
+        "reon-api-audience"
+      ]
+    },
+    {
       "clientId": "reon-process-ui",
       "name": "РЕОН 2.0 — веб-интерфейс процессов (SPA, DEV)",
       "description": "Public SPA Camunda UI: authorization code + PKCE S256 (dev-only)",
